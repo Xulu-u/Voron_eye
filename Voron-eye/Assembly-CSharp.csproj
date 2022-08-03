@@ -56,19 +56,29 @@
     <Analyzer Include="C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\Extensions\Microsoft\Visual Studio Tools for Unity\Analyzers\Microsoft.Unity.Analyzers.dll" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Assets\VScripts\Oskar\DelaunayTriangulation.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Camera\SplitScreen.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Shell\ShellExplosion.cs" />
     <Compile Include="Assets\TutorialInfo\Scripts\Readme.cs" />
-    <Compile Include="Assets\LinesControl.cs" />
+    <Compile Include="Assets\VScripts\Oskar\VoronoiCalculator.cs" />
+    <Compile Include="Assets\VScripts\LinesControl.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Tank\TankShooting.cs" />
+    <Compile Include="Assets\VScripts\ProjectionHits.cs" />
+    <Compile Include="Assets\VScripts\Oskar\DelaunayCalculator.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Tank\TankHealth.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\UI\UIDirectionControl.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Managers\TankManager.cs" />
+    <Compile Include="Assets\VScripts\Oskar\VoronoiClipper.cs" />
+    <Compile Include="Assets\VScripts\PositionAndRotation.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Camera\CameraControl.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Managers\GameManager.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Movement.cs" />
+    <Compile Include="Assets\VScripts\Oskar\BreakableSurface.cs" />
+    <Compile Include="Assets\VScripts\Oskar\VectorExtensions.cs" />
+    <Compile Include="Assets\VScripts\Oskar\Geom.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Tank\TankMovement.cs" />
     <Compile Include="Assets\CameraController.cs" />
+    <Compile Include="Assets\VScripts\Oskar\VoronoiDiagram.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\Fonts\Bowlby_One\FontLicense.txt" />
