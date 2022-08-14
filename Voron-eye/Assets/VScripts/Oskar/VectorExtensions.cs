@@ -24,7 +24,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace GK {
+namespace VE
+{
 	public static class VectorExtensions {
 
 		public static bool IsReal(this float f) {

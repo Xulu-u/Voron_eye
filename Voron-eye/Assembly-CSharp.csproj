@@ -64,9 +64,10 @@
     <Compile Include="Assets\VScripts\LinesControl.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Tank\TankShooting.cs" />
     <Compile Include="Assets\VScripts\ProjectionHits.cs" />
+    <Compile Include="Assets\VScripts\MeshValue.cs" />
     <Compile Include="Assets\VScripts\Oskar\DelaunayCalculator.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Tank\TankHealth.cs" />
-    <Compile Include="Assets\_Completed-Assets\Scripts\UI\UIDirectionControl.cs" />
+    <Compile Include="Assets\VScripts\UI\UIDirectionControl.cs" />
     <Compile Include="Assets\_Completed-Assets\Scripts\Managers\TankManager.cs" />
     <Compile Include="Assets\VScripts\Oskar\VoronoiClipper.cs" />
     <Compile Include="Assets\VScripts\PositionAndRotation.cs" />

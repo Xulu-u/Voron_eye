@@ -24,7 +24,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace GK {
+namespace VE
+{
 	public class BreakableSurface : MonoBehaviour {
 
 		public MeshFilter Filter     { get; private set; }

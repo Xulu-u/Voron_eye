@@ -26,7 +26,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Profiling;
 
-namespace GK {
+namespace VE
+{
 	public class VoronoiCalculator {
 
 		DelaunayCalculator delCalc;
