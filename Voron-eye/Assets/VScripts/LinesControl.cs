@@ -38,15 +38,21 @@ namespace VE
 
         //Lines
         private List<LineRenderer> m_Lines;
-        private List<LineRenderer> m_PerpendicularLines;
+        //private List<LineRenderer> m_PerpendicularLines;
 
         //Meshes
         private List<GameObject> m_Meshes;
         Vector2[] screenVertices;
-        GameObject meshgo;
-        //Mesh mesh;
-        Vector3[] vertices;
-        int[] triangles;
+        
+
+        //Materials
+        private List<Material> m_Materials;
+
+        //Render Textures
+        private List<RenderTexture> m_RenderTextures;
+
+        //Player Cameras
+        private List<GameObject> m_PlayerCameras;
 
 
         private void Awake()
@@ -59,24 +65,32 @@ namespace VE
         {
             //Initializing Lists
             m_Lines = new List<LineRenderer>();
-            m_PerpendicularLines = new List<LineRenderer>();
+            //m_PerpendicularLines = new List<LineRenderer>();
             m_ScreenTargets = new List<Vector2>();
             m_Meshes = new List<GameObject>();
+            m_Materials = new List<Material>();
+            m_RenderTextures = new List<RenderTexture>();
+            m_PlayerCameras = new List<GameObject>();
 
             //Setting Camera Distances
             m_ScreenCameraDistance = m_MinScreenCameraDistance;
             m_GlobalCameraDistance = m_MinScreenCameraDistance;
 
+            //Setting Global Camera rendering order
+            m_GlobalCamera.depth = 0;
+            int cameracount = 1;
+
             //Screen Vertices Array
             screenVertices = new Vector2[4];
             screenVertices[2] = new Vector2(0, 0); //the order of this almost makes me have a heart attack
-            screenVertices[3] = new Vector2(0, m_GlobalCamera.pixelHeight);
-            screenVertices[1] = new Vector2(m_GlobalCamera.pixelWidth, 0);
-            screenVertices[0] = new Vector2(m_GlobalCamera.pixelWidth, m_GlobalCamera.pixelHeight);
+            screenVertices[3] = new Vector2(0, Screen.height/*m_GlobalCamera.pixelHeight*/);
+            screenVertices[1] = new Vector2(Screen.width/*m_GlobalCamera.pixelWidth*/, 0);
+            screenVertices[0] = new Vector2(Screen.width/*m_GlobalCamera.pixelWidth*/, Screen.height/*m_GlobalCamera.pixelHeight*/);
 
             GameObject Lines = new GameObject("Lines");
-            GameObject Plines = new GameObject("PLines");
+            //GameObject Plines = new GameObject("PLines");
             GameObject Meshes = new GameObject("ScreenMeshes");
+            GameObject PlayerCameras = new GameObject("PlayerCameras");
 
             for (int i = 0; i < m_Targets.Count; i++)
             {
@@ -91,53 +105,79 @@ namespace VE
                     lr.transform.parent = Lines.transform;
                     m_Lines.Add(lr);
 
-                    LineRenderer plr = DrawLinePerpendicular("PLine" + (i + 1) + (j + 1), lr, -m_GlobalCamera.transform.forward);
-                    plr.colorGradient = CreateGradient(Color.black, Color.black);
-                    plr.transform.parent = Plines.transform;
-                    m_PerpendicularLines.Add(plr);
+                    //LineRenderer plr = DrawLinePerpendicular("PLine" + (i + 1) + (j + 1), lr, -m_GlobalCamera.transform.forward);
+                    //plr.colorGradient = CreateGradient(Color.black, Color.black);
+                    //plr.transform.parent = Plines.transform;
+                    //m_PerpendicularLines.Add(plr);
                 }
 
                 //Create Meshes and add them to the list
-                GameObject meshgo = new GameObject("Mesh" + i + 1);
+                GameObject meshgo = new GameObject("Mesh" + (i + 1));
                 meshgo.transform.position = transform.position;
                 meshgo.transform.parent = Meshes.transform;
                 meshgo.AddComponent<MeshFilter>();
                 meshgo.AddComponent<MeshRenderer>();
+
+                GameObject meshgo2 = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                meshgo2.transform.position = m_Targets[i].transform.position;
+
+                Vector3 scale = meshgo2.transform.localScale;
+                scale.x = Screen.width;
+                scale.y = Screen.height;
+                meshgo2.GetComponent<Renderer>().material.shader = Shader.Find("Unlit/Texture");
+                
+
+                // Create Materials
+                Renderer rend = meshgo.GetComponent<Renderer>();
+                rend.material = new Material(Shader.Find("Unlit/Texture"));
+
+                //Create Render Textures
+                RenderTexture rt;
+                rt = new RenderTexture(Screen.width, Screen.height, 16, RenderTextureFormat.ARGB32);
+                rt.Create();
+
+                //Create Player Cameras
+                GameObject camerago = new GameObject("PlayerCamera" + (i + 1));
+                camerago.transform.position = m_Targets[i].transform.position;
+                camerago.transform.parent = m_Targets[i].transform;
+                camerago.AddComponent<Camera>();
+
+                Camera camera = camerago.GetComponent<Camera>();
+                camera.depth = i + 1;//bc global
+                camera.targetDisplay = 8;//doesnt mess with global and screen
+                cameracount++;
+
+                //Set Meshes Materials Render Textures and Camera Render Target
+                camerago.GetComponent<Camera>().targetTexture = rt;
+                rend.material.mainTexture = rt;
                 meshgo.GetComponent<Renderer>().material = m_Targets[i].GetComponent<Renderer>().material;
+                //meshgo.GetComponent<Renderer>().material = rend.material;
+
+                meshgo2.GetComponent<Renderer>().material.mainTexture = rt;
+                meshgo2.transform.localScale = scale;
+
+                //Add to Lists
                 m_Meshes.Add(meshgo);
-
-                //Mesh mesh;
-                //mesh = meshgo.GetComponent<MeshFilter>().mesh;
-
+                m_PlayerCameras.Add(camerago);
+                m_RenderTextures.Add(rt);
+                m_Materials.Add(rend.material);
             }
 
-            //Test mesh
-            meshgo = new GameObject("meshgo");
-            meshgo.AddComponent<MeshFilter>();
-            meshgo.AddComponent<MeshRenderer>();
-
-            //mesh = meshgo.GetComponent<MeshFilter>().mesh;
+            //Last in stack bc is the main(?)
+            m_ScreenCamera.depth = cameracount;
         }
 
         // Update is called once per frame
         void Update()
         {
-            // Make mesh data
-            vertices = new Vector3[4];
-            vertices[0] = new Vector3(-1, -1);
-            vertices[1] = new Vector3(-1, MeshValue.ins.yValue);
-            vertices[2] = new Vector3(1, 1);
-            vertices[3] = new Vector3(1, -1);
-
-            triangles = new int[] { 0, 1, 2, 0, 2, 3 };
-
-            //create mesh
-            //mesh.Clear();
-            //mesh.vertices = vertices;
-            //mesh.triangles = triangles;
 
         }
 
+        void FixedUpdate()
+        {
+            VoronoiDiagram();
+        }
+        
         private void LateUpdate()
         {
             //FindAverageTargetPosition();
@@ -145,9 +185,9 @@ namespace VE
 
             UpdateGlobalScreenTargets();
 
-            UpdateLines(m_Targets, m_Lines, m_PerpendicularLines);
+            UpdateLines(m_Targets, m_Lines/*, m_PerpendicularLines*/);
 
-            VoronoiDiagram();
+            
         }
         private void SetGlobalScreenTargets()
         {
@@ -258,7 +298,7 @@ namespace VE
             return gradient;
         }
 
-        void UpdateLines(List<GameObject> targets, List<LineRenderer> lines, List<LineRenderer> plines)
+        void UpdateLines(List<GameObject> targets, List<LineRenderer> lines/*, List<LineRenderer> plines*/)
         {
             //Player Lines
             int count = 0;
@@ -273,12 +313,12 @@ namespace VE
                     lines[count].SetPosition(2, targets[j].transform.position);
 
                     //Updating perpendicular lines
-                    Vector3 linevec = lines[count].GetPosition(2) - lines[count].GetPosition(0);
-                    Vector3 crossvec = Vector3.Cross(linevec, -m_GlobalCamera.transform.forward).normalized;
+                    //Vector3 linevec = lines[count].GetPosition(2) - lines[count].GetPosition(0);
+                    //Vector3 crossvec = Vector3.Cross(linevec, -m_GlobalCamera.transform.forward).normalized;
 
-                    plines[count].SetPosition(0, lines[count].GetPosition(1) + crossvec * 100);
-                    plines[count].SetPosition(1, lines[count].GetPosition(1));
-                    plines[count].SetPosition(2, lines[count].GetPosition(1) - crossvec * 100);
+                    //plines[count].SetPosition(0, lines[count].GetPosition(1) + crossvec * 100);
+                    //plines[count].SetPosition(1, lines[count].GetPosition(1));
+                    //plines[count].SetPosition(2, lines[count].GetPosition(1) - crossvec * 100);
 
                     count++;
                 }
@@ -346,6 +386,14 @@ namespace VE
                 //Substracting the difference to maintain the maximum distance set
                 var distanceDiff = m_MaxScreenCameraDistance - m_GlobalCameraDistance;
                 m_ScreenCamera.transform.localPosition = new Vector3(0, 0, -distanceDiff);
+            }
+
+            //Player cameras
+            for (int i = 0; i < m_PlayerCameras.Count; i++)
+            {
+                m_PlayerCameras[i].transform.rotation = m_GlobalCamera.transform.rotation;
+                m_PlayerCameras[i].transform.position = m_Targets[i].transform.position;
+                m_PlayerCameras[i].transform.Translate(0, 0, -m_MaxScreenCameraDistance);
             }
         }
 
@@ -510,6 +558,7 @@ namespace VE
 
             mesh.RecalculateBounds();
             mesh.RecalculateNormals();
+            mesh.RecalculateUVDistributionMetrics();
 
             return mesh;
         }
