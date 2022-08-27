@@ -1,5 +1,5 @@
 sceneSetups:
-- path: Assets/Scenes/RenderTrial.unity
+- path: Assets/Voron-eye/Scenes/RenderTrial.unity
   isLoaded: 1
   isActive: 1
   isSubScene: 0
