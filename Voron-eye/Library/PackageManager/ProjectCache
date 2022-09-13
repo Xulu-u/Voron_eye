@@ -5,16 +5,16 @@ m_ProjectFiles:
     m_ContentTrackingEnabled: 1
     m_ModificationDate:
       serializedVersion: 2
-      ticks: 637968783488950899
-    m_Hash: 4131942351
+      ticks: 637986934761057457
+    m_Hash: 3290693841
   m_LockFileStatus:
     m_FilePath: C:/Users/polhc/Documents/GitHub/Voron-eye/Voron-eye/Packages/packages-lock.json
     m_PathExists: 1
     m_ContentTrackingEnabled: 1
     m_ModificationDate:
       serializedVersion: 2
-      ticks: 637968783493744436
-    m_Hash: 2098860298
+      ticks: 637986934762916006
+    m_Hash: 3688887245
 m_EmbeddedPackageManifests:
   m_ManifestsStatus: {}
 m_PackageAssets:
@@ -837,6 +837,140 @@ m_PackageAssets:
         type: git
         url: https://github.com/Unity-Technologies/com.unity.ide.vscode.git
         revision: b0740c80bfc2440527c317109f7c3d9100132722
+        path: 
+    - packageId: com.unity.memoryprofiler@0.7.1-preview.1
+      testable: 0
+      isDirectDependency: 1
+      version: 0.7.1-preview.1
+      source: 1
+      resolvedPath: C:\Users\polhc\Documents\GitHub\Voron-eye\Voron-eye\Library\PackageCache\com.unity.memoryprofiler@0.7.1-preview.1
+      assetPath: Packages/com.unity.memoryprofiler
+      name: com.unity.memoryprofiler
+      displayName: Memory Profiler
+      author:
+        name: 
+        email: 
+        url: 
+      category: 
+      type: 
+      description: The Memory Profiler offers a unified solution allowing you to
+        profile both small projects on mobile devices and big AAA projects on high
+        end machines. It provides actionable information about allocations in the
+        engine to allow developers to manage and reduce memory usage.
+      status: 4
+      errors: []
+      versions:
+        all:
+        - 0.1.0-preview.1
+        - 0.1.0-preview.2
+        - 0.1.0-preview.3
+        - 0.1.0-preview.4
+        - 0.1.0-preview.5
+        - 0.1.0-preview.6
+        - 0.1.0-preview.7
+        - 0.1.0-preview.8
+        - 0.1.0-preview.9
+        - 0.2.0-preview.1
+        - 0.2.1-preview.1
+        - 0.2.1-preview.2
+        - 0.2.2-preview.1
+        - 0.2.3-preview.1
+        - 0.2.3-preview.2
+        - 0.2.4-preview.1
+        - 0.2.5-preview.1
+        - 0.2.6-preview.1
+        - 0.2.7-preview.1
+        - 0.2.8-preview.1
+        - 0.2.8-preview.2
+        - 0.2.9-preview.1
+        - 0.2.9-preview.3
+        - 0.2.10-preview.1
+        - 0.4.0-preview.1
+        - 0.4.0-preview.2
+        - 0.4.1-preview.1
+        - 0.4.2-preview.1
+        - 0.4.3-preview.1
+        - 0.4.4-preview.2
+        - 0.5.0-preview.1
+        - 0.5.1-preview.1
+        - 0.6.0-preview.1
+        - 0.7.0-preview.1
+        - 0.7.0-preview.2
+        - 0.7.1-preview.1
+        - 1.0.0-pre.1
+        - 1.0.0-pre.2
+        - 1.0.0-pre.3
+        - 1.0.0
+        compatible:
+        - 0.1.0-preview.1
+        - 0.1.0-preview.2
+        - 0.1.0-preview.3
+        - 0.1.0-preview.4
+        - 0.1.0-preview.5
+        - 0.1.0-preview.6
+        - 0.1.0-preview.7
+        - 0.1.0-preview.8
+        - 0.1.0-preview.9
+        - 0.2.0-preview.1
+        - 0.2.1-preview.1
+        - 0.2.1-preview.2
+        - 0.2.2-preview.1
+        - 0.2.3-preview.1
+        - 0.2.3-preview.2
+        - 0.2.4-preview.1
+        - 0.2.5-preview.1
+        - 0.2.6-preview.1
+        - 0.2.7-preview.1
+        - 0.2.8-preview.1
+        - 0.2.8-preview.2
+        - 0.2.9-preview.1
+        - 0.2.9-preview.3
+        - 0.2.10-preview.1
+        - 0.4.0-preview.1
+        - 0.4.0-preview.2
+        - 0.4.1-preview.1
+        - 0.4.2-preview.1
+        - 0.4.3-preview.1
+        - 0.4.4-preview.2
+        - 0.5.0-preview.1
+        - 0.5.1-preview.1
+        - 0.6.0-preview.1
+        - 0.7.0-preview.1
+        - 0.7.0-preview.2
+        - 0.7.1-preview.1
+        verified: 
+      dependencies:
+      - name: com.unity.editorcoroutines
+        version: 1.0.0
+      resolvedDependencies:
+      - name: com.unity.editorcoroutines
+        version: 1.0.0
+      keywords:
+      - profiler
+      - memory
+      - memoryprofiler
+      - snapshot
+      - profiling
+      - tool
+      registry:
+        id: main
+        name: 
+        url: https://packages.unity.com
+        scopes: []
+        isDefault: 1
+        capabilities: 7
+      hasRegistry: 1
+      hideInEditor: 1
+      entitlements:
+        isAllowed: 1
+      isAssetStorePackage: 0
+      datePublishedTicks: 637907255460000000
+      documentationUrl: 
+      hasRepository: 1
+      repository:
+        type: git
+        url: https://github.cds.internal.unity3d.com/unity/com.unity.memoryprofiler.git
+        revision: 2d8bf7d2ec50db575f8b6920ef9fc8b898b709da
         path: 
     - packageId: com.unity.multiplayer-hlapi@1.0.8
       testable: 0
@@ -4279,6 +4413,70 @@ m_PackageAssets:
         type: git
         url: git@gitlab.cds.internal.unity3d.com/upm-packages/core/nuget.mono-cecil.git
         revision: d9e57e10c26ba36a62a828729ad08eb73d0386b6
+        path: 
+    - packageId: com.unity.editorcoroutines@1.0.0
+      testable: 0
+      isDirectDependency: 0
+      version: 1.0.0
+      source: 1
+      resolvedPath: C:\Users\polhc\Documents\GitHub\Voron-eye\Voron-eye\Library\PackageCache\com.unity.editorcoroutines@1.0.0
+      assetPath: Packages/com.unity.editorcoroutines
+      name: com.unity.editorcoroutines
+      displayName: Editor Coroutines
+      author:
+        name: 
+        email: 
+        url: 
+      category: 
+      type: 
+      description: 'The editor coroutines package allows developers to start constructs
+        similar to Unity''s monobehaviour based coroutines within the editor using
+        abitrary objects. '
+      status: 4
+      errors: []
+      versions:
+        all:
+        - 0.0.1-preview.3
+        - 0.0.1-preview.4
+        - 0.0.1-preview.5
+        - 0.0.2-preview.1
+        - 0.1.0-preview.1
+        - 0.1.0-preview.2
+        - 1.0.0
+        compatible:
+        - 0.0.1-preview.3
+        - 0.0.1-preview.4
+        - 0.0.1-preview.5
+        - 0.0.2-preview.1
+        - 0.1.0-preview.1
+        - 0.1.0-preview.2
+        - 1.0.0
+        verified: 1.0.0
+      dependencies: []
+      resolvedDependencies: []
+      keywords:
+      - coroutine
+      - coroutines
+      - editor
+      registry:
+        id: main
+        name: 
+        url: https://packages.unity.com
+        scopes: []
+        isDefault: 1
+        capabilities: 7
+      hasRegistry: 1
+      hideInEditor: 1
+      entitlements:
+        isAllowed: 1
+      isAssetStorePackage: 0
+      datePublishedTicks: 637232611380000000
+      documentationUrl: 
+      hasRepository: 1
+      repository:
+        type: git
+        url: https://github.cds.internal.unity3d.com/unity/com.unity.editorcoroutines.git
+        revision: f67fc9992bbc7a553b17375de53a8b2db136528e
         path: 
     - packageId: com.unity.searcher@4.3.2
       testable: 0

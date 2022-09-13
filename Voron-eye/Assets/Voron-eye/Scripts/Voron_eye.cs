@@ -8,37 +8,35 @@ using UnityEngine.Rendering;
 
 namespace VE
 {
-    public class LinesControl : MonoBehaviour
+    public class Voron_eye : MonoBehaviour
     {
-        private string LAYERNAME = "Voron-eye_Stencil_Layer_";
-        private string LAYERNAME2 = "Screen_Camera";
-        [SerializeField] private Camera m_GlobalCamera;
-        [SerializeField] private Camera m_ScreenCamera;
-        [SerializeField] private GameObject m_FrameOffset;
+        struct ScreenProperties
+        {
+            public readonly int Width;
+            public readonly int Height;
+            public readonly float AspectRatio;
+            public float FOV;
 
-        public bool m_VoroneyeSetting = true;
-        private bool m_VoroneyeActive = false;
-        
-        //Camera Settings
-        Vector3 m_PreviousScreenCameraPosition;
-        Vector3 m_PreviousGlobalCameraPosition;
+            public ScreenProperties(int width, int height, float fov = 60)
+            {
+                Width = width;
+                Height = height;
+                FOV = fov;
+                AspectRatio = (float)Width / Height;
+            }
+        }
+
+        #region Constants
+        private const int MAX_TARGETS = 15;
+        private readonly string LAYERNAME = "Voron-eye_Stencil_Layer_";
+        private readonly string LAYERNAME2 = "Screen_Camera";
+        #endregion
+
+        #region Settings
+        [Header("Settings")]
+        public bool m_SplitScreen = true; //TODO: Deactivate and not update the Voronoi Diagram
         public float m_MinScreenCameraDistance = 1f;
         public float m_MaxScreenCameraDistance = 100f;
-        private float m_ScreenCameraDistance;
-        private float m_GlobalCameraDistance;
-        private float m_ScreenDistanceFromGlobalCamera = 10f;
-        private float m_ScreenDistanceFromScreenCamera;
-
-        //Separator Lines
-        public bool m_SeparatorLinesActive = true;
-        private List<LineRenderer> m_SeparatorLines;
-        public Color m_SeparatorLinesColor = Color.black;
-        public float m_SeparatorLinesWidth = 2;
-        private bool m_BorderLines = false;//yikes
-        private bool m_DuplicatedLines = false;
-        private float m_SeparatorLinesCheckingMargin = 0.1f;
-
-        //Camera Multitarget
         public float Pitch;
         public float Yaw;
         public float Roll;
@@ -46,16 +44,53 @@ namespace VE
         public float PaddingRight;
         public float PaddingUp;
         public float PaddingDown;
-        public float MoveSmoothTime = 0.19f;
+        public bool m_SplitLinesActive = true;
+        public Color m_SplitLinesColor = Color.black;
+        public float m_SplitLinesWidth = 2;
+        public bool m_ConnectingLinesActive = false;
+        #endregion
 
+        #region Serialized Variables
+        [Header("References")]
+        [SerializeField] private List<GameObject> m_Targets;
+        [SerializeField] private Camera m_GlobalCamera;
+        [SerializeField] private Camera m_ScreenCamera;
+        [SerializeField] private GameObject m_FrameOffset;
+        [SerializeField] private Shader m_StencilShader;
+        [SerializeField] private Material m_QuadMaterial;
+        [SerializeField] private Material m_LinesMaterial;
+        [SerializeField] private ForwardRendererData m_forwardRendererData = null;
+        #endregion
+
+        
+
+        //Screen
+        private bool m_VoroneyeActive = false;
+        ScreenProperties m_Screen;
+
+        //Global/Screen Cameras 
+        Vector3 m_PreviousScreenCameraPosition;
+        Vector3 m_PreviousGlobalCameraPosition;
+        private float m_ScreenCameraDistance;
+        private float m_GlobalCameraDistance;
+        private float m_ScreenDistanceFromGlobalCamera = 10f;
+        private float m_ScreenDistanceFromScreenCamera;
+
+        //Split Lines
+        private List<LineRenderer> m_SplitLines;
+        private GameObject m_SplitLinesGO;
+        private bool m_BorderLines = false;//yikes
+        private bool m_DuplicatedLines = false;
+        private float m_SplitLinesCheckingMargin = 0.1f;
+
+        //Camera Multitarget
+        private float MoveSmoothTime = 0.19f;
+
+        //Voronoi Diagram
         //public int m_LloydsRelaxationPasses = 0;
-
-        private DebugProjection _debugProjection;
-        enum DebugProjection { DISABLE, IDENTITY, ROTATED }
         enum ProjectionEdgeHits { TOP_BOTTOM, LEFT_RIGHT }
 
         //Targets
-        [SerializeField] private List<GameObject> m_Targets;
         private List<GameObject> m_ActiveTargets;
         private List<Vector2> m_ScreenTargets;
         private Vector3 m_AverageTargetPosition;
@@ -63,16 +98,16 @@ namespace VE
         private int m_ActiveTargetCount;
 
         //Lines
-        public bool m_ConnectingLinesActive = true;
         private List<LineRenderer> m_Lines;
         //private List<LineRenderer> m_PerpendicularLines;
-        private GameObject Lines;
+        private GameObject m_ConnectingLinesGO;
         private float m_LinesWidth = 1f;
 
         //Meshes
         private List<GameObject> m_Meshes;
-        Vector2[] screenVertices;
-        Vector2[] screenVertices2;
+        
+        private Vector2[] screenVertices;
+        private Vector2[] screenVertices2;
 
         //Screens(Quads)
         private List<GameObject> m_Quads;
@@ -81,21 +116,20 @@ namespace VE
 
         //Materials
         private List<Material> m_Materials;
-        [SerializeField] private Material m_QuadMaterial;
 
         //Render Textures
         private List<RenderTexture> m_RenderTextures;
 
-        //Player Cameras
-        private List<GameObject> m_PlayerCameras;
+        //Target Cameras
+        private List<GameObject> m_TargetCameras;
+        private GameObject m_TargetCamerasGO;
 
         //URP
-        [SerializeField] private ForwardRendererData m_forwardRendererData = null;
         public List<RenderObjects> m_RenderObjects;
 
         private void Awake()
         {
-            _debugProjection = DebugProjection.ROTATED;
+
         }
 
         // Start is called before the first frame update
@@ -110,11 +144,19 @@ namespace VE
             m_Quads = new List<GameObject>();
             m_Materials = new List<Material>();
             m_RenderTextures = new List<RenderTexture>();
-            m_PlayerCameras = new List<GameObject>();
-            m_SeparatorLines = new List<LineRenderer>();
+            m_TargetCameras = new List<GameObject>();
+            m_SplitLines = new List<LineRenderer>();
             //m_ScriptableRendererFeatures = new List<ScriptableRendererFeature>();
 
-            Lines = new GameObject("Lines");
+            m_Screen = new ScreenProperties(Screen.width, Screen.height);
+
+            m_ConnectingLinesGO = new GameObject("Connecting Lines");
+            m_SplitLinesGO = new GameObject("Split Lines");
+            m_TargetCamerasGO = new GameObject("Target Cameras");
+
+            m_ConnectingLinesGO.transform.parent = transform;
+            m_SplitLinesGO.transform.parent = transform;
+            m_TargetCamerasGO.transform.parent = transform;
 
             //Setting Camera Distances
             m_ScreenCameraDistance = m_MinScreenCameraDistance;
@@ -123,8 +165,8 @@ namespace VE
             //Moving the frame for the Screen Camera(bottom left)
             Vector3 frameOffset = new Vector3
             {
-                x = -Screen.width / 2,
-                y = -Screen.height / 2,
+                x = -m_Screen.Width / 2,
+                y = -m_Screen.Height / 2,
                 z = -m_ScreenDistanceFromGlobalCamera
             };
             m_FrameOffset.transform.localPosition = frameOffset;
@@ -132,7 +174,7 @@ namespace VE
             //m_FrameOffset.transform.localPosition
 
             //Distance required to give a specified frustum height
-            m_ScreenDistanceFromScreenCamera = Screen.height * 0.5f / Mathf.Tan(m_ScreenCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            m_ScreenDistanceFromScreenCamera = m_Screen.Height * 0.5f / Mathf.Tan(m_ScreenCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
             new Layers().AddNewLayer(LAYERNAME2);
 
             //Setting Global Camera rendering order
@@ -142,25 +184,29 @@ namespace VE
             //Screen Vertices Array
             screenVertices = new Vector2[4];//this one for the voronoi diagram class
             screenVertices[2] = new Vector2(0, 0); //the order of this almost makes me have a heart attack
-            screenVertices[3] = new Vector2(0, Screen.height/*m_GlobalCamera.pixelHeight*/);
-            screenVertices[1] = new Vector2(Screen.width/*m_GlobalCamera.pixelWidth*/, 0);
-            screenVertices[0] = new Vector2(Screen.width/*m_GlobalCamera.pixelWidth*/, Screen.height/*m_GlobalCamera.pixelHeight*/);
+            screenVertices[3] = new Vector2(0, m_Screen.Height/*m_GlobalCamera.pixelHeight*/);
+            screenVertices[1] = new Vector2(m_Screen.Width/*m_GlobalCamera.pixelWidth*/, 0);
+            screenVertices[0] = new Vector2(m_Screen.Width/*m_GlobalCamera.pixelWidth*/, m_Screen.Height/*m_GlobalCamera.pixelHeight*/);
 
             screenVertices2 = new Vector2[4];//this one for my own calculations (2 players case)
             screenVertices2[0] = new Vector2(0, 0);
-            screenVertices2[1] = new Vector2(0, Screen.height);
-            screenVertices2[2] = new Vector2(Screen.width, 0);
-            screenVertices2[3] = new Vector2(Screen.width, Screen.height);
-
+            screenVertices2[1] = new Vector2(0, m_Screen.Height);
+            screenVertices2[2] = new Vector2(m_Screen.Width, 0);
+            screenVertices2[3] = new Vector2(m_Screen.Width, m_Screen.Height);
+            
+            //Check the maximum number of targets
+            CheckMaxTargets();
+            
+            //Store target count
             m_TargetCount = m_Targets.Count;
-
+            
             //Check if inactive targets
             CheckActiveTargets();
             //Creation and setting of everything for each active target
             SetScreenTargets();
             
-            //Creation and setting of everything needed for each target
-            for (int i = 0; i < m_Targets.Count; i++)
+            //Creation and setting of everything needed for each target (even if the GO is inactive) except if it is null
+            for (int i = 0; i < m_TargetCount && m_Targets[i] != null; i++ )
             {             
                 //Screen position
                 //m_ScreenTargets.Add(m_GlobalCamera.WorldToScreenPoint(m_Targets[i].transform.position));
@@ -200,23 +246,23 @@ namespace VE
                 meshgo2.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
 
                 Vector3 scale = meshgo2.transform.localScale;
-                scale.x = Screen.width * m_ScreenScaleMultiplicator;
-                scale.y = Screen.height * m_ScreenScaleMultiplicator;
+                scale.x = m_Screen.Width * m_ScreenScaleMultiplicator;
+                scale.y = m_Screen.Height * m_ScreenScaleMultiplicator;
 
                 // Create Materials
                 Renderer rend = meshgo.GetComponent<Renderer>();
-                rend.material = new Material(Shader.Find("Custom/StencilShader"));;
+                rend.material = new Material(m_StencilShader);;
                 rend.material.SetInt("_StencilID", (i + 1));//Set corresponding Stencil ID
 
                 //Create Render Textures
                 RenderTexture rt;
-                rt = new RenderTexture(Screen.width * 2, Screen.height * 2, 16, RenderTextureFormat.ARGB32);
+                rt = new RenderTexture(m_Screen.Width * 2, m_Screen.Height * 2, 16, RenderTextureFormat.ARGB32);
                 rt.Create();
 
                 //Create Player Cameras
                 GameObject camerago = new GameObject("PlayerCamera" + (i + 1));
                 camerago.transform.position = m_Targets[i].transform.position;
-                camerago.transform.parent = m_Targets[i].transform;
+                camerago.transform.parent = m_TargetCamerasGO.transform;
                 camerago.AddComponent<Camera>();
 
                 //Player Cameras Settings
@@ -237,7 +283,7 @@ namespace VE
                 //Add to Lists
                 m_Meshes.Add(meshgo);
                 m_Quads.Add(meshgo2);
-                m_PlayerCameras.Add(camerago);
+                m_TargetCameras.Add(camerago);
                 m_RenderTextures.Add(rt);
                 m_Materials.Add(rend.material);
 
@@ -250,9 +296,9 @@ namespace VE
             m_ScreenCamera.depth = cameracount;
 
             //Go through all the player cameras to uncheck the voron-eye layers and the screencamera layer from their culling layermask
-            for (int i = 0; i < m_PlayerCameras.Count; i++)
+            for (int i = 0; i < m_TargetCameras.Count; i++)
             {
-                Camera camera = m_PlayerCameras[i].GetComponent<Camera>();
+                Camera camera = m_TargetCameras[i].GetComponent<Camera>();
                 //Uncheck all the voron-eye layers
                 for (int j = 0; j < m_Targets.Count; j++)
                 {
@@ -267,6 +313,7 @@ namespace VE
         {
             CheckTargets();
             CheckActiveTargets();
+            CheckResolution(Screen.width, Screen.height);
             //Recalculate Targets
             //Recalculate onviewport changed
             CameraMovement();
@@ -286,24 +333,37 @@ namespace VE
                 {
                     for (int i = 0; i < m_Lines.Count; i++)
                     {
+                        Destroy(m_Lines[i].material);
                         Destroy(m_Lines[i].gameObject);
                     }
                 }
                 m_Lines.Clear();
             }
 
-            if (!m_SeparatorLinesActive)
+            if (!m_SplitLinesActive)
             {
-                if (m_SeparatorLines.Count > 0)
+                if (m_SplitLines.Count > 0)
                 {
-                    for (int i = 0; i < m_SeparatorLines.Count; i++)
+                    for (int i = 0; i < m_SplitLines.Count; i++)
                     {
-                        Destroy(m_SeparatorLines[i].gameObject);
+                        Destroy(m_SplitLines[i].material);
+                        Destroy(m_SplitLines[i].gameObject);
                     }
                 }
-                m_SeparatorLines.Clear();
+                m_SplitLines.Clear();
             }
             
+        }
+        private void CheckMaxTargets()
+        {
+            if (m_Targets.Count > MAX_TARGETS)
+            {
+                for (int i = MAX_TARGETS; i < m_Targets.Count; i++)
+                {
+                    m_Targets.RemoveAt(i - 1);
+                    Debug.Log("Excess targets removed... Maximum Targets is 15!!!");
+                }
+            }
         }
         private void CheckTargets()
         {
@@ -312,9 +372,11 @@ namespace VE
                 //Clearing Lists and stuff
                 m_ActiveTargets.Clear();
                 m_ScreenTargets.Clear();
+
                 //Has custom amount
                 for (int i = 0; i < m_Lines.Count; i++)
                 {
+                    Destroy(m_Lines[i].material);
                     Destroy(m_Lines[i].gameObject);
                 }
                 m_Lines.Clear();
@@ -322,24 +384,27 @@ namespace VE
                 //Have the same amount
                 for (int i = 0; i < m_TargetCount; i++)
                 {
+                    m_Meshes[i].GetComponent<MeshFilter>().mesh.Clear();
                     Destroy(m_Meshes[i].gameObject);
                     Destroy(m_Quads[i].gameObject);
                     Destroy(m_Materials[i]);
+                    m_RenderTextures[i].Release();
                     Destroy(m_RenderTextures[i]);
-                    Destroy(m_PlayerCameras[i]);
+                    Destroy(m_TargetCameras[i]);
                 }
                 m_Meshes.Clear();
                 m_Quads.Clear();
                 m_Materials.Clear();                
-                m_RenderTextures.Clear();                
-                m_PlayerCameras.Clear();
+                m_RenderTextures.Clear();
+                m_TargetCameras.Clear();
 
                 //Has custom amount
-                for (int i = 0; i < m_SeparatorLines.Count; i++)
+                for (int i = 0; i < m_SplitLines.Count; i++)
                 {
-                    Destroy(m_SeparatorLines[i].gameObject);
+                    Destroy(m_SplitLines[i].material);
+                    Destroy(m_SplitLines[i].gameObject);
                 }
-                m_SeparatorLines.Clear();
+                m_SplitLines.Clear();
 
                 //From now very similar to what we do at the Start() function
                 
@@ -409,7 +474,7 @@ namespace VE
                     //Create Player Cameras
                     GameObject camerago = new GameObject("PlayerCamera" + (i + 1));
                     camerago.transform.position = m_Targets[i].transform.position;
-                    camerago.transform.parent = m_Targets[i].transform;
+                    camerago.transform.parent = m_TargetCamerasGO.transform;
                     camerago.AddComponent<Camera>();
 
                     //Player Cameras Settings
@@ -420,7 +485,7 @@ namespace VE
 
                     //Set Meshes Materials Render Textures and Camera Render Target
                     camerago.GetComponent<Camera>().targetTexture = rt;
-                    rend.material.mainTexture = rt;
+                    //rend.material.mainTexture = rt;
                     //meshgo.GetComponent<Renderer>().material = m_Targets[i].GetComponent<Renderer>().material;
                     meshgo.GetComponent<Renderer>().material = rend.material;
 
@@ -430,7 +495,7 @@ namespace VE
                     //Add to Lists
                     m_Meshes.Add(meshgo);
                     m_Quads.Add(meshgo2);
-                    m_PlayerCameras.Add(camerago);
+                    m_TargetCameras.Add(camerago);
                     m_RenderTextures.Add(rt);
                     m_Materials.Add(rend.material);
 
@@ -443,9 +508,9 @@ namespace VE
                 m_ScreenCamera.depth = cameracount;
 
                 //Go through all the player cameras to uncheck the voron-eye layers and the screencamera layer from their culling layermask
-                for (int i = 0; i < m_PlayerCameras.Count; i++)
+                for (int i = 0; i < m_TargetCameras.Count; i++)
                 {
-                    Camera camera = m_PlayerCameras[i].GetComponent<Camera>();
+                    Camera camera = m_TargetCameras[i].GetComponent<Camera>();
                     //Uncheck all the voron-eye layers
                     for (int j = 0; j < m_Targets.Count; j++)
                     {
@@ -463,10 +528,13 @@ namespace VE
             m_ActiveTargets.Clear();
             //Check everywhere that targets inactive
             for (int i = 0; i < m_Targets.Count; i++)
-            {
-                if (m_Targets[i].gameObject.activeSelf)
-                {
-                    m_ActiveTargets.Add(m_Targets[i]);
+            {   
+                if (m_Targets[i] != null)
+                { 
+                    if (m_Targets[i].gameObject.activeSelf)
+                    {
+                        m_ActiveTargets.Add(m_Targets[i]);
+                    }
                 }
             }
             if (m_ActiveTargetCount != m_ActiveTargets.Count)
@@ -478,6 +546,79 @@ namespace VE
 
                 m_ActiveTargetCount = m_ActiveTargets.Count;
             }
+        }
+        private void CheckResolution(int width, int height)
+        {
+            //We check if the screen resultion has changed (viewport got bigger or smaller) 
+            if (m_Screen.Width == width && m_Screen.Height == height)
+            {
+                return;
+            }
+
+            //Moving the frame for the Screen Camera(bottom left)
+            Vector3 frameOffset = new Vector3
+            {
+                x = -width / 2,
+                y = -height / 2,
+                z = -m_ScreenDistanceFromGlobalCamera
+            };
+            m_FrameOffset.transform.localPosition = frameOffset;
+
+            //Distance required to give a specified frustum height
+            m_ScreenDistanceFromScreenCamera = height * 0.5f / Mathf.Tan(m_ScreenCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+
+            //Screen Vertices Array
+            screenVertices = new Vector2[4];//this one for the voronoi diagram class
+            screenVertices[2] = new Vector2(0, 0); //the order of this almost makes me have a heart attack
+            screenVertices[3] = new Vector2(0, height);
+            screenVertices[1] = new Vector2(width, 0);
+            screenVertices[0] = new Vector2(width, height/*m_GlobalCamera.pixelHeight*/);
+
+            screenVertices2 = new Vector2[4];//this one for my own calculations (2 players case)
+            screenVertices2[0] = new Vector2(0, 0);
+            screenVertices2[1] = new Vector2(0, height);
+            screenVertices2[2] = new Vector2(width, 0);
+            screenVertices2[3] = new Vector2(width, height);
+            
+            //Reset the values
+            for (int i = 0; i < m_TargetCount; i++)
+            {
+                //Recalculate screen textures
+                Vector3 scale = m_Quads[i].transform.localScale;
+                scale.x = m_Screen.Width * m_ScreenScaleMultiplicator;
+                scale.y = m_Screen.Height * m_ScreenScaleMultiplicator;
+
+                //Release Render Textures
+                m_RenderTextures[i].Release();
+                Destroy(m_RenderTextures[i]);
+
+                //Create Render Textures
+                m_RenderTextures[i] = new RenderTexture(m_Screen.Width * 2, m_Screen.Height * 2, 16, RenderTextureFormat.ARGB32);
+                m_RenderTextures[i].Create();
+
+                //Set Camera Render Target
+                m_TargetCameras[i].GetComponent<Camera>().targetTexture = m_RenderTextures[i];
+
+                m_Quads[i].GetComponent<Renderer>().material.mainTexture = m_RenderTextures[i];
+                m_Quads[i].transform.localScale = scale;
+            }
+
+            //playerTex?.Release();
+            //cellsTexture?.Release();
+
+            //playerTex = new RenderTexture(width, height, 32);
+            //playerTex.name = "Player Render";
+
+            //PlayerCamera.targetTexture = playerTex;
+
+            //cellsTexture = new RenderTexture(width, height, 0, GraphicsFormat.R8_UNorm);
+            //cellsTexture.name = "Cells Visualization Texture";
+
+            //SplitLineMaterial.SetTexture(SHADER_CELLS_STENCIL_TEX, cellsTexture);
+            //SplitLineMaterial.SetFloat(SHADER_LINE_THICKNESS, (float)height / 200);
+
+            //screen = new RenderProperties(width, height);
+
         }
         private void SetScreenTargets()
         {
@@ -493,6 +634,7 @@ namespace VE
             {
                 for (int i = 0; i < m_Lines.Count; i++)
                 {
+                    Destroy(m_Lines[i].material);
                     Destroy(m_Lines[i].gameObject);
                 }
             }
@@ -505,7 +647,7 @@ namespace VE
                 {
                     LineRenderer lr = DrawLine("Line" + (i + 1) + (j + 1), m_ActiveTargets[i].transform.position, m_ActiveTargets[j].transform.position);
                     lr.colorGradient = CreateGradient(m_ActiveTargets[i].GetComponent<Renderer>().material.color, m_ActiveTargets[j].GetComponent<Renderer>().material.color);
-                    lr.transform.parent = Lines.transform;
+                    lr.transform.parent = m_ConnectingLinesGO.transform;
                     lr.widthMultiplier = m_LinesWidth;
                     m_Lines.Add(lr);
                 }
@@ -587,7 +729,7 @@ namespace VE
             myLine.transform.position = start;
             myLine.AddComponent<LineRenderer>();
             LineRenderer lr = myLine.GetComponent<LineRenderer>();
-            lr.material = new Material(Shader.Find("Legacy Shaders/Particles/Alpha Blended Premultiply"));
+            lr.material = m_LinesMaterial;
 
             //lr.SetWidth(0.1f, 0.1f);
             lr.SetVertexCount(3); //The Players and the midpoint
@@ -598,7 +740,7 @@ namespace VE
 
             return lr;
         }
-        LineRenderer DrawSeparatorLine(string name, Vector3 start, Vector3 end, Color color, float width)
+        LineRenderer DrawSplitLine(string name, Vector3 start, Vector3 end, Color color, float width)
         {
             GameObject myLine = new GameObject(name);
             myLine.transform.parent = m_FrameOffset.transform; 
@@ -608,7 +750,7 @@ namespace VE
             myLine.AddComponent<LineRenderer>();
 
             LineRenderer lr = myLine.GetComponent<LineRenderer>();
-            lr.material = new Material(Shader.Find("Legacy Shaders/Particles/Alpha Blended Premultiply"));
+            lr.material = m_LinesMaterial;
             lr.colorGradient = CreateGradient(color, color);
             lr.useWorldSpace = false;
             lr.alignment = LineAlignment.View;
@@ -621,7 +763,7 @@ namespace VE
             
             return lr;
         }
-        void UpdateSeparatorLine(List<LineRenderer> lines, int i, Vector3 start, Vector3 end, Color color, float width)
+        void UpdateSplitLine(List<LineRenderer> lines, int i, Vector3 start, Vector3 end, Color color, float width)
         {
             lines[i].SetPosition(0, new Vector3(start.x, start.y, start.z - 1));
             lines[i].SetPosition(1, new Vector3(end.x, end.y, end.z - 1));
@@ -720,8 +862,12 @@ namespace VE
             m_GlobalCamera.transform.position = targetPositionAndRotation.Position;//Vector3.SmoothDamp(m_GlobalCamera.transform.position, targetPositionAndRotation.Position, ref velocity, MoveSmoothTime);
             m_GlobalCamera.transform.rotation = targetPositionAndRotation.Rotation;
 
+            //Substracting the difference to maintain the maximum distance set
+            var distanceDiff = m_ScreenDistanceFromGlobalCamera + m_ScreenDistanceFromScreenCamera;
+            m_ScreenCamera.transform.localPosition = new Vector3(0, 0, -distanceDiff);
+
             //Checking that the screen camera distance from the targets is not higher than the maximum we set
-            if (m_GlobalCameraDistance > m_MaxScreenCameraDistance && m_VoroneyeSetting)
+            if (m_GlobalCameraDistance > m_MaxScreenCameraDistance && m_SplitScreen)
             {
                 m_VoroneyeActive = true;
 
@@ -729,29 +875,25 @@ namespace VE
                 {
                     m_ScreenCamera.enabled = true;
                     m_GlobalCamera.enabled = false;
-                    //m_ScreenCamera = Camera.main;
                 }
-                //Substracting the difference to maintain the maximum distance set
-                //var distanceDiff = m_MaxScreenCameraDistance - m_GlobalCameraDistance;
-                var distanceDiff = m_ScreenDistanceFromGlobalCamera + m_ScreenDistanceFromScreenCamera;
-                m_ScreenCamera.transform.localPosition = new Vector3(0, 0, -distanceDiff);
             }
             else
             {
+                m_VoroneyeActive = false;
+
                 if (!m_GlobalCamera.enabled | m_ScreenCamera.enabled)
                 {
                     m_ScreenCamera.enabled = false;
                     m_GlobalCamera.enabled = true;
-                    //m_GlobalCamera = Camera.main;
                 }
             }
 
             //Player cameras
             for (int i = 0; i < m_ActiveTargets.Count; i++)
             {
-                m_PlayerCameras[i].transform.rotation = m_GlobalCamera.transform.rotation;  
-                m_PlayerCameras[i].transform.position = m_ActiveTargets[i].transform.position; 
-                m_PlayerCameras[i].transform.Translate(0, 0, -m_MaxScreenCameraDistance * m_ScreenScaleMultiplicator); //zoom scaled to the screen
+                m_TargetCameras[i].transform.rotation = m_GlobalCamera.transform.rotation;
+                m_TargetCameras[i].transform.position = m_ActiveTargets[i].transform.position;
+                m_TargetCameras[i].transform.Translate(0, 0, -m_MaxScreenCameraDistance * m_ScreenScaleMultiplicator); //zoom scaled to the screen
             }
         }
         void VoronoiDiagram()
@@ -759,36 +901,38 @@ namespace VE
             //Special case for 1 target
             if (m_ScreenTargets.Count == 1)
             {
-                //Destroy separator lines and clear list
-                if (m_SeparatorLines.Count > 0)
+                //Destroy Split lines and clear list
+                if (m_SplitLines.Count > 0)
                 {
-                    for (int i = 0; i < m_SeparatorLines.Count; i++)
+                    for (int i = 0; i < m_SplitLines.Count; i++)
                     {
-                        Destroy(m_SeparatorLines[i].gameObject);
+                        Destroy(m_SplitLines[i].material);
+                        Destroy(m_SplitLines[i].gameObject);
                     }
-                    m_SeparatorLines.Clear();
+                    m_SplitLines.Clear();
                 }
             }
             //Special case for 2 targets (this mess is mine lol)
             else if (m_ScreenTargets.Count == 2)
             {
-                if (m_SeparatorLinesActive)
+                if (m_SplitLinesActive)
                 {
-                    //Check separator lines list and handle it
-                    if (m_SeparatorLines.Count != 1)
+                    //Check Split lines list and handle it
+                    if (m_SplitLines.Count != 1)
                     {
-                        if (m_SeparatorLines.Count > 1)
+                        if (m_SplitLines.Count > 1)
                         {
-                            for (int i = 1; i < m_SeparatorLines.Count; i++)
-                            {
-                                GameObject.Destroy(m_SeparatorLines[i].gameObject);
-                                m_SeparatorLines.RemoveAt(i);
+                            for (int i = 1; i < m_SplitLines.Count; i++)
+                            {   
+                                Destroy(m_SplitLines[i].material);
+                                Destroy(m_SplitLines[i].gameObject);
+                                m_SplitLines.RemoveAt(i);
                             }
                         }
-                        if (m_SeparatorLines.Count < 1)
+                        if (m_SplitLines.Count < 1)
                         {
-                            m_SeparatorLines.Clear(); //just in case
-                            m_SeparatorLines.Add(DrawSeparatorLine("Separator Line 1", Vector3.zero, Vector3.zero, m_SeparatorLinesColor, m_SeparatorLinesWidth));
+                            m_SplitLines.Clear(); //just in case
+                            m_SplitLines.Add(DrawSplitLine("Split Line", Vector3.zero, Vector3.zero, m_SplitLinesColor, m_SplitLinesWidth));
                         }
                     }
                 }
@@ -858,7 +1002,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[0].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -875,7 +1019,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[1].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -894,7 +1038,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[1].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -911,7 +1055,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[0].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -919,9 +1063,9 @@ namespace VE
                         m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
                     }
                     //Update separating line
-                    if (m_SeparatorLinesActive)
+                    if (m_SplitLinesActive)
                     {
-                        UpdateSeparatorLine(m_SeparatorLines, 0, mp_3, mp_4, m_SeparatorLinesColor, m_SeparatorLinesWidth);
+                        UpdateSplitLine(m_SplitLines, 0, mp_3, mp_4, m_SplitLinesColor, m_SplitLinesWidth);
                     }
                 }
 
@@ -948,7 +1092,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[0].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -965,7 +1109,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[1].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -984,7 +1128,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[1].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -1001,7 +1145,7 @@ namespace VE
 
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[0].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
@@ -1009,7 +1153,7 @@ namespace VE
                         m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
                     }
                     //Update separating line
-                    UpdateSeparatorLine(m_SeparatorLines, 0, mp_3, mp_4, m_SeparatorLinesColor, m_SeparatorLinesWidth);
+                    UpdateSplitLine(m_SplitLines, 0, mp_3, mp_4, m_SplitLinesColor, m_SplitLinesWidth);
                 }
             }
             
@@ -1047,29 +1191,29 @@ namespace VE
                     {
                         //Clears current mesh and replaces it with new clipped voronoi diagram site
                         m_Meshes[i].GetComponent<MeshFilter>().mesh.Clear();
-                        m_Meshes[i].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(clipped);
+                        m_Meshes[i].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[i].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity = Vector3.zero;
                         m_Quads[i].transform.localPosition = Vector3.SmoothDamp(m_Quads[i].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
 
-                        //Separator Lines handling
-                        if (m_SeparatorLinesActive)
+                        //Split Lines handling
+                        if (m_SplitLinesActive)
                         {
                             bool skippedfirst = false;
                             for (int j = 0; j < clipped.Count; j++)
                             {
                                 //Checking that the vertex is not a screen corner (with some margin)
                                 if (!m_BorderLines
-                                    && (m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[0].x)
-                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[0].y)
-                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[1].x)
-                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[1].y)
-                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[2].x)
-                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[2].y)
-                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[3].x)
-                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[3].y)
+                                    && (m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[0].x)
+                                    && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[0].y)
+                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[1].x)
+                                    && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[1].y)
+                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[2].x)
+                                    && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[2].y)
+                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[3].x)
+                                    && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[3].y)
                                     //|| clipped[j] == screenVertices[0]
                                     //|| clipped[j] == screenVertices[1]
                                     //|| clipped[j] == screenVertices[2]
@@ -1089,14 +1233,14 @@ namespace VE
                                         if (!m_BorderLines)
                                         {
                                             //Checking that the next vertex is not a screen corner either
-                                            if (m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[0].x)
-                                                && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[0].y)
-                                                || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[1].x)
-                                                && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[1].y)
-                                                || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[2].x)
-                                                && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[2].y)
-                                                || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[3].x)
-                                                && m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[3].y)
+                                            if (m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[0].x)
+                                                && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[0].y)
+                                                || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[1].x)
+                                                && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[1].y)
+                                                || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[2].x)
+                                                && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[2].y)
+                                                || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[3].x)
+                                                && m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[3].y)
                                                 //|| clipped[j1] == screenVertices[0]
                                                 //|| clipped[j1] == screenVertices[1]
                                                 //|| clipped[j1] == screenVertices[2]
@@ -1115,22 +1259,22 @@ namespace VE
                                                 || dirvec == Vector2.right)
                                             {
                                                 //Check if any point is inside any border line
-                                                if (m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[0].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[1].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[2].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[3].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[0].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[1].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[2].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[3].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[0].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[1].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[2].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[3].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[0].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[1].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[2].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[3].y)
+                                                if (m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[0].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[1].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[2].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[3].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[0].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[1].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[2].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[3].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[0].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[1].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[2].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].x - screenVertices[3].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[0].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[1].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[2].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j1].y - screenVertices[3].y)
                                                     //|| clipped[j].x == screenVertices[0].x 
                                                     //|| clipped[j].x == screenVertices[1].x 
                                                     //|| clipped[j].x == screenVertices[2].x 
@@ -1158,21 +1302,21 @@ namespace VE
                                         {
                                             //Skip duplicate lines that are equal (same vertices) or reversed (swapped vertices)
                                             bool isduplicate = false;
-                                            for (int k = 0; k < m_SeparatorLines.Count; k++)
+                                            for (int k = 0; k < m_SplitLines.Count; k++)
                                             {
                                                 //Check equal
-                                                if (m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).x - clipped[j].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).y - clipped[j].y)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).x - clipped[j1].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).y - clipped[j1].y))
+                                                if (m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).x - clipped[j].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).y - clipped[j].y)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).x - clipped[j1].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).y - clipped[j1].y))
                                                 {
                                                     isduplicate = true;
                                                 }
                                                 //Check reversed
-                                                else if (m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).x - clipped[j1].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).y - clipped[j1].y)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).x - clipped[j].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).y - clipped[j].y))
+                                                else if (m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).x - clipped[j1].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).y - clipped[j1].y)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).x - clipped[j].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).y - clipped[j].y))
                                                 {
                                                     isduplicate = true;
                                                 }
@@ -1187,13 +1331,13 @@ namespace VE
                                         //Adding counter to check if there are enough lines in the list
                                         slcounter++;
 
-                                        if (slcounter > m_SeparatorLines.Count)
+                                        if (slcounter > m_SplitLines.Count)
                                         {
-                                            m_SeparatorLines.Add(DrawSeparatorLine("Separator Line " + (slcounter - 1), clipped[j], clipped[j1], m_SeparatorLinesColor, m_SeparatorLinesWidth));
+                                            m_SplitLines.Add(DrawSplitLine("Split Line", clipped[j], clipped[j1], m_SplitLinesColor, m_SplitLinesWidth));
                                         }
                                         else
                                         {
-                                            UpdateSeparatorLine(m_SeparatorLines, slcounter - 1, clipped[j], clipped[j1], m_SeparatorLinesColor, m_SeparatorLinesWidth);
+                                            UpdateSplitLine(m_SplitLines, slcounter - 1, clipped[j], clipped[j1], m_SplitLinesColor, m_SplitLinesWidth);
                                         }
                                     }
                                     else
@@ -1214,22 +1358,22 @@ namespace VE
                                             if (dirvec == Vector2.up || dirvec == Vector2.down || dirvec == Vector2.left || dirvec == Vector2.right)
                                             {
                                                 //Check if any point is inside any border line
-                                                if (m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[0].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[1].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[2].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[3].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[0].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[1].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[2].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[3].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[0].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[1].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[2].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[3].x)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[0].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[1].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[2].y)
-                                                    || m_SeparatorLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[3].y)
+                                                if (m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[0].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[1].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[2].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].x - screenVertices[3].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[0].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[1].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[2].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[j].y - screenVertices[3].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[0].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[1].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[2].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].x - screenVertices[3].x)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[0].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[1].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[2].y)
+                                                    || m_SplitLinesCheckingMargin > Mathf.Abs(clipped[0].y - screenVertices[3].y)
                                                     //|| clipped[j].x == screenVertices[0].x 
                                                     //|| clipped[j].x == screenVertices[1].x 
                                                     //|| clipped[j].x == screenVertices[2].x 
@@ -1257,21 +1401,21 @@ namespace VE
                                         {
                                             //Skip lines that are equal (same vertices) or reversed (swapped vertices)
                                             bool isduplicate = false;
-                                            for (int k = 0; k < m_SeparatorLines.Count; k++)
+                                            for (int k = 0; k < m_SplitLines.Count; k++)
                                             {
                                                 //Check equal
-                                                if (m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).x - clipped[j].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).y - clipped[j].y)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).x - clipped[0].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).y - clipped[0].y))
+                                                if (m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).x - clipped[j].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).y - clipped[j].y)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).x - clipped[0].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).y - clipped[0].y))
                                                 {
                                                     isduplicate = true;
                                                 }
                                                 //Check reversed
-                                                else if (m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).x - clipped[0].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(0).y - clipped[0].y)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).x - clipped[j].x)
-                                                    && m_SeparatorLinesCheckingMargin > Mathf.Abs(m_SeparatorLines[k].GetPosition(1).y - clipped[j].y))
+                                                else if (m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).x - clipped[0].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(0).y - clipped[0].y)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).x - clipped[j].x)
+                                                    && m_SplitLinesCheckingMargin > Mathf.Abs(m_SplitLines[k].GetPosition(1).y - clipped[j].y))
                                                 {
                                                     isduplicate = true;
                                                 }
@@ -1286,13 +1430,13 @@ namespace VE
                                         //Adding counter to check if there are enough lines in the list
                                         slcounter++;
 
-                                        if (slcounter > m_SeparatorLines.Count)
+                                        if (slcounter > m_SplitLines.Count)
                                         {
-                                            m_SeparatorLines.Add(DrawSeparatorLine("Separator Line " + (slcounter - 1), clipped[j], clipped[0], m_SeparatorLinesColor, m_SeparatorLinesWidth));
+                                            m_SplitLines.Add(DrawSplitLine("Split Line", clipped[j], clipped[0], m_SplitLinesColor, m_SplitLinesWidth));
                                         }
                                         else
                                         {
-                                            UpdateSeparatorLine(m_SeparatorLines, slcounter - 1, clipped[j], clipped[0], m_SeparatorLinesColor, m_SeparatorLinesWidth);
+                                            UpdateSplitLine(m_SplitLines, slcounter - 1, clipped[j], clipped[0], m_SplitLinesColor, m_SplitLinesWidth);
                                         }
                                     }
                                 }
@@ -1300,21 +1444,21 @@ namespace VE
                         }
                     }
                     //Destroy and remove excess lines if there are any
-                    if (m_SeparatorLinesActive)
+                    if (m_SplitLinesActive)
                     {
-                        if (slcounter < m_SeparatorLines.Count)
+                        if (slcounter < m_SplitLines.Count)
                         {
-                            for (int l = slcounter; l < m_SeparatorLines.Count; l++)
+                            for (int l = slcounter; l < m_SplitLines.Count; l++)
                             {
-                                Destroy(m_SeparatorLines[l].gameObject);
-                                m_SeparatorLines.RemoveAt(l);
+                                Destroy(m_SplitLines[l].gameObject);
+                                m_SplitLines.RemoveAt(l);
                             }
                         }
                     }
                 }
             }
         }
-        static Mesh MeshPolygonFromPolygon(List<Vector2> polygon)
+        static Mesh MeshPolygonFromPolygon(Mesh mesh, List<Vector2> polygon)
         {
             //Simplified version from Oskar's MeshFromPolygon() where he adds thickness (thus making it 3d)
 
@@ -1347,13 +1491,13 @@ namespace VE
             Debug.Assert(ti == tris.Length);
             Debug.Assert(vi == verts.Length);
 
-            var mesh = new Mesh();
-
+            //var mesh = new Mesh();
 
             mesh.vertices = verts;
             mesh.triangles = tris;
             mesh.normals = norms;
 
+            mesh.Optimize();
             mesh.RecalculateBounds();
             mesh.RecalculateNormals();
             mesh.RecalculateTangents();
@@ -1390,15 +1534,6 @@ namespace VE
                 (viewProjectionTopAndBottomEdgeHits.Max + viewProjectionTopAndBottomEdgeHits.Min) / 2f,
                 projectionPlaneZ - requiredCameraPerpedicularDistanceFromProjectionPlane);
 
-            DebugDrawProjectionRays(cameraPositionIdentity,
-                viewProjectionLeftAndRightEdgeHits,
-                viewProjectionTopAndBottomEdgeHits,
-                requiredCameraPerpedicularDistanceFromProjectionPlane,
-                targetsRotatedToCameraIdentity,
-                projectionPlaneZ,
-                halfHorizontalFovRad,
-                halfVerticalFovRad);
-
             //We store the distance
             m_GlobalCameraDistance = requiredCameraPerpedicularDistanceFromProjectionPlane;
             m_ScreenCameraDistance = requiredCameraPerpedicularDistanceFromProjectionPlane;
@@ -1433,64 +1568,6 @@ namespace VE
                 return new[] { target.y + projectionHalfSpan, target.y - projectionHalfSpan };
             }
 
-        }
-
-        private void DebugDrawProjectionRays(Vector3 cameraPositionIdentity, ProjectionHits viewProjectionLeftAndRightEdgeHits,
-            ProjectionHits viewProjectionTopAndBottomEdgeHits, float requiredCameraPerpedicularDistanceFromProjectionPlane,
-            IEnumerable<Vector3> targetsRotatedToCameraIdentity, float projectionPlaneZ, float halfHorizontalFovRad,
-            float halfVerticalFovRad)
-        {
-
-            if (_debugProjection == DebugProjection.DISABLE)
-                return;
-
-            DebugDrawProjectionRay(
-                cameraPositionIdentity,
-                new Vector3((viewProjectionLeftAndRightEdgeHits.Max - viewProjectionLeftAndRightEdgeHits.Min) / 2f,
-                    (viewProjectionTopAndBottomEdgeHits.Max - viewProjectionTopAndBottomEdgeHits.Min) / 2f,
-                    requiredCameraPerpedicularDistanceFromProjectionPlane), new Color32(31, 119, 180, 255));
-            DebugDrawProjectionRay(
-                cameraPositionIdentity,
-                new Vector3((viewProjectionLeftAndRightEdgeHits.Max - viewProjectionLeftAndRightEdgeHits.Min) / 2f,
-                    -(viewProjectionTopAndBottomEdgeHits.Max - viewProjectionTopAndBottomEdgeHits.Min) / 2f,
-                    requiredCameraPerpedicularDistanceFromProjectionPlane), new Color32(31, 119, 180, 255));
-            DebugDrawProjectionRay(
-                cameraPositionIdentity,
-                new Vector3(-(viewProjectionLeftAndRightEdgeHits.Max - viewProjectionLeftAndRightEdgeHits.Min) / 2f,
-                    (viewProjectionTopAndBottomEdgeHits.Max - viewProjectionTopAndBottomEdgeHits.Min) / 2f,
-                    requiredCameraPerpedicularDistanceFromProjectionPlane), new Color32(31, 119, 180, 255));
-            DebugDrawProjectionRay(
-                cameraPositionIdentity,
-                new Vector3(-(viewProjectionLeftAndRightEdgeHits.Max - viewProjectionLeftAndRightEdgeHits.Min) / 2f,
-                    -(viewProjectionTopAndBottomEdgeHits.Max - viewProjectionTopAndBottomEdgeHits.Min) / 2f,
-                    requiredCameraPerpedicularDistanceFromProjectionPlane), new Color32(31, 119, 180, 255));
-
-            foreach (var target in targetsRotatedToCameraIdentity)
-            {
-                float distanceFromProjectionPlane = projectionPlaneZ - target.z;
-                float halfHorizontalProjectionVolumeCircumcircleDiameter = Mathf.Sin(Mathf.PI - ((Mathf.PI / 2f) + halfHorizontalFovRad)) / (distanceFromProjectionPlane);
-                float projectionHalfHorizontalSpan = Mathf.Sin(halfHorizontalFovRad) / halfHorizontalProjectionVolumeCircumcircleDiameter;
-                float halfVerticalProjectionVolumeCircumcircleDiameter = Mathf.Sin(Mathf.PI - ((Mathf.PI / 2f) + halfVerticalFovRad)) / (distanceFromProjectionPlane);
-                float projectionHalfVerticalSpan = Mathf.Sin(halfVerticalFovRad) / halfVerticalProjectionVolumeCircumcircleDiameter;
-
-                DebugDrawProjectionRay(target,
-                    new Vector3(projectionHalfHorizontalSpan, 0f, distanceFromProjectionPlane),
-                    new Color32(214, 39, 40, 255));
-                DebugDrawProjectionRay(target,
-                    new Vector3(-projectionHalfHorizontalSpan, 0f, distanceFromProjectionPlane),
-                    new Color32(214, 39, 40, 255));
-                DebugDrawProjectionRay(target,
-                    new Vector3(0f, projectionHalfVerticalSpan, distanceFromProjectionPlane),
-                    new Color32(214, 39, 40, 255));
-                DebugDrawProjectionRay(target,
-                    new Vector3(0f, -projectionHalfVerticalSpan, distanceFromProjectionPlane),
-                    new Color32(214, 39, 40, 255));
-            }
-        }
-        private void DebugDrawProjectionRay(Vector3 start, Vector3 direction, Color color)
-        {
-            Quaternion rotation = _debugProjection == DebugProjection.IDENTITY ? Quaternion.identity : m_GlobalCamera.transform.rotation;
-            Debug.DrawRay(rotation * start, rotation * direction, color);
         }
 
     }
