@@ -57,13 +57,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\DelaunayTriangulation.cs" />
+    <Compile Include="Assets\Voron-eye\Scripts\LinesControl.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\MeshValue.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Movement.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\BreakableSurface.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\VectorExtensions.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\Geom.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\VoronoiCalculator.cs" />
-    <Compile Include="Assets\Voron-eye\Scripts\LinesControl.cs" />
+    <Compile Include="Assets\Voron-eye\Scripts\Voron_eye.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\ProjectionHits.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\DelaunayCalculator.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Layers.cs" />
