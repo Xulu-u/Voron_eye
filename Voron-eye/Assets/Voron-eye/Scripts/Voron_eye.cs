@@ -95,6 +95,7 @@ namespace VE
         private Vector3 m_AverageTargetPosition;
         private int m_TargetCount;
         private int m_ActiveTargetCount;
+        private int m_ScreenTargetCount;
 
         //Lines
         private List<LineRenderer> m_Lines;
@@ -199,11 +200,6 @@ namespace VE
             //Store target count
             m_TargetCount = m_Targets.Count;
             
-            //Check if inactive targets
-            CheckActiveTargets();
-            //Creation and setting of everything for each active target
-            SetScreenTargets();
-            
             //Creation and setting of everything needed for each target (even if the GO is inactive) except if it is null
             for (int i = 0; i < m_TargetCount && m_Targets[i] != null; i++ )
             {             
@@ -305,6 +301,11 @@ namespace VE
                 //Uncheck the screencamera layer
                 camera.cullingMask &= ~(1 << LayerMask.NameToLayer(LAYERNAME2));
             }
+
+            //Check if inactive targets
+            CheckActiveTargets();
+            //Set Screen Targets
+            SetScreenTargets();
         }
         
         private void LateUpdate()
@@ -538,18 +539,38 @@ namespace VE
                     if (m_Targets[i].gameObject.activeSelf)
                     {
                         m_ActiveTargets.Add(m_Targets[i]);
+
+                        if (!m_Meshes[i].activeSelf)
+                        {
+                            m_Meshes[i].SetActive(true);
+                        }
+                        if (!m_Quads[i].activeSelf)
+                        {
+                            m_Quads[i].SetActive(true);
+                        }
+                        if (!m_TargetCameras[i].activeSelf)
+                        {
+                            m_TargetCameras[i].SetActive(true);
+                        }
+                    }
+                    else
+                    {
+                        m_Meshes[i].SetActive(false);
+                        m_Quads[i].SetActive(false);
+                        m_TargetCameras[i].SetActive(false);
                     }
                 }
             }
+            
             if (m_ActiveTargetCount != m_ActiveTargets.Count)
             {
                 if (m_ConnectingLinesActive)
                 {
                     SetConnectingLines();
                 }
-
-                m_ActiveTargetCount = m_ActiveTargets.Count;
             }
+
+            m_ActiveTargetCount = m_ActiveTargets.Count;
         }
         private void CheckResolution(int width, int height)
         {
@@ -609,10 +630,12 @@ namespace VE
         }
         private void SetScreenTargets()
         {
+            m_ScreenTargets.Clear();
             for (int i = 0; i < m_ActiveTargets.Count; i++)
             { 
                 //Unity implictly converts vec3 to vec2 and viceversa, it discards z (which we don't need)
                 m_ScreenTargets.Add(m_GlobalCamera.WorldToScreenPoint(m_ActiveTargets[i].transform.position));
+                m_ScreenTargetCount = m_ScreenTargets.Count;
             }
         }
         private void SetConnectingLines()
@@ -642,9 +665,16 @@ namespace VE
         }
         private void UpdateGlobalScreenTargets()
         {
-            for (int i = 0; i < m_ActiveTargets.Count; i++)
+            if (m_ScreenTargetCount != m_ActiveTargetCount)
             {
-                m_ScreenTargets[i] = m_GlobalCamera.WorldToScreenPoint(m_ActiveTargets[i].transform.position);
+                SetScreenTargets();
+            }
+            else
+            {
+                for (int i = 0; i < m_ActiveTargets.Count; i++)
+                {
+                    m_ScreenTargets[i] = m_GlobalCamera.WorldToScreenPoint(m_ActiveTargets[i].transform.position);
+                }
             }
         }
         private void FindAverageTargetPosition()
