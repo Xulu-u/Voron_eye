@@ -383,20 +383,30 @@ namespace VE
                 //Have the same amount
                 for (int i = 0; i < m_TargetCount; i++)
                 {
-                    Destroy(m_Meshes[i].GetComponent<MeshRenderer>().material);
-                    m_Meshes[i].GetComponent<MeshFilter>().mesh.Clear();
-                    Destroy(m_Meshes[i].gameObject);
+                    if (m_Meshes.Count == m_TargetCount)
+                    {
+                        Destroy(m_Meshes[i].GetComponent<MeshRenderer>().material);
+                        m_Meshes[i].GetComponent<MeshFilter>().mesh.Clear();
+                        Destroy(m_Meshes[i].gameObject);
+                    }
 
-                    Destroy(m_Quads[i].GetComponent<MeshRenderer>().material);
-                    m_Quads[i].GetComponent<MeshFilter>().mesh.Clear();
-                    Destroy(m_Quads[i].gameObject);
+                    if (m_Quads.Count == m_TargetCount)
+                    {
+                        Destroy(m_Quads[i].GetComponent<MeshRenderer>().material);
+                        m_Quads[i].GetComponent<MeshFilter>().mesh.Clear();
+                        Destroy(m_Quads[i].gameObject);
+                    }
 
                     //Destroy(m_Materials[i]);
-
-                    m_RenderTextures[i].Release();
-                    Destroy(m_RenderTextures[i]);
-
-                    Destroy(m_TargetCameras[i]);
+                    if (m_RenderTextures.Count == m_TargetCount)
+                    {
+                        m_RenderTextures[i].Release();
+                        Destroy(m_RenderTextures[i]);
+                    }
+                    if (m_TargetCameras.Count == m_TargetCount)
+                    {
+                        Destroy(m_TargetCameras[i]);
+                    }
                 }
                 m_Meshes.Clear();
                 m_Quads.Clear();
@@ -417,13 +427,6 @@ namespace VE
                 //Setting Global Camera rendering order
                 m_GlobalCamera.depth = 0;
                 int cameracount = 1;
-
-                //Check if inactive targets
-                CheckActiveTargets();
-
-                //Creation and setting of everything for each active target
-                SetScreenTargets();
-                SetConnectingLines();
 
                 //Creation and setting of everything needed for each target
                 for (int i = 0; i < m_Targets.Count; i++)
@@ -526,6 +529,13 @@ namespace VE
                 }
 
                 m_TargetCount = m_Targets.Count;
+
+                //Check if inactive targets
+                CheckActiveTargets();
+
+                //Creation and setting of everything for each active target
+                SetScreenTargets();
+                SetConnectingLines();
             }
         }
         private void CheckActiveTargets()
@@ -540,25 +550,31 @@ namespace VE
                     {
                         m_ActiveTargets.Add(m_Targets[i]);
 
-                        if (!m_Meshes[i].activeSelf)
+                        if (!m_Meshes[m_Targets.Count-1].activeSelf)
                         {
-                            m_Meshes[i].SetActive(true);
+                            m_Meshes[m_Targets.Count - 1].SetActive(true);
                         }
-                        if (!m_Quads[i].activeSelf)
+                        if (!m_Quads[m_Targets.Count - 1].activeSelf)
                         {
-                            m_Quads[i].SetActive(true);
+                            m_Quads[m_Targets.Count - 1].SetActive(true);
                         }
-                        if (!m_TargetCameras[i].activeSelf)
+                        if (!m_TargetCameras[m_Targets.Count - 1].activeSelf)
                         {
-                            m_TargetCameras[i].SetActive(true);
+                            m_TargetCameras[m_Targets.Count - 1].SetActive(true);
                         }
                     }
                     else
                     {
-                        m_Meshes[i].SetActive(false);
-                        m_Quads[i].SetActive(false);
-                        m_TargetCameras[i].SetActive(false);
+                        m_Meshes[m_Targets.Count - 1].SetActive(false);
+                        m_Quads[m_Targets.Count - 1].SetActive(false);
+                        m_TargetCameras[m_Targets.Count - 1].SetActive(false);
                     }
+                }
+                else
+                {
+                    m_Meshes[m_Targets.Count - 1].SetActive(false);
+                    m_Quads[m_Targets.Count - 1].SetActive(false);
+                    m_TargetCameras[m_Targets.Count - 1].SetActive(false);
                 }
             }
             
@@ -637,6 +653,18 @@ namespace VE
                 m_ScreenTargets.Add(m_GlobalCamera.WorldToScreenPoint(m_ActiveTargets[i].transform.position));
                 m_ScreenTargetCount = m_ScreenTargets.Count;
             }
+
+            //Checking that the screen targets are not exactly at the same position (at least 1 away) beacuse it caused problems with voronoi diagram giving null values.
+            for (int i = 0; i < m_ScreenTargets.Count; i++)
+            {
+                for(int j = i + 1; j < m_ScreenTargets.Count; j++)
+                {
+                    if (m_ScreenTargets[i] == m_ScreenTargets[j])
+                    {
+                        m_ScreenTargets[j] = new Vector2(m_ScreenTargets[j].x + 1f, m_ScreenTargets[j].y + 1f);
+                    }
+                }
+            }
         }
         private void SetConnectingLines()
         {
@@ -674,6 +702,18 @@ namespace VE
                 for (int i = 0; i < m_ActiveTargets.Count; i++)
                 {
                     m_ScreenTargets[i] = m_GlobalCamera.WorldToScreenPoint(m_ActiveTargets[i].transform.position);
+                }
+
+                //Checking that the screen targets are not exactly at the same position (at least 1 away) beacuse it caused problems with voronoi diagram giving null values.
+                for (int i = 0; i < m_ScreenTargets.Count; i++)
+                {
+                    for (int j = i + 1; j < m_ScreenTargets.Count; j++)
+                    {
+                        if (m_ScreenTargets[i] == m_ScreenTargets[j])
+                        {
+                            m_ScreenTargets[j] = new Vector2(m_ScreenTargets[j].x + 1f, m_ScreenTargets[j].y + 1f);
+                        }
+                    }
                 }
             }
         }
