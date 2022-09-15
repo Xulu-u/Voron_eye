@@ -27,8 +27,8 @@ namespace VE
 
         #region Constants
         private const int MAX_TARGETS = 15;
-        private readonly string LAYERNAME = "Voron-eye_Stencil_Layer_";
-        private readonly string LAYERNAME2 = "Screen_Camera";
+        private readonly string LAYERNAME = "Voroneye";
+        private readonly string LAYERNAME2 = "ScreenCamera";
         #endregion
 
         #region Settings
@@ -36,6 +36,9 @@ namespace VE
         public bool m_SplitScreen = true; //TODO: Deactivate and not update the Voronoi Diagram
         public float m_MinScreenCameraDistance = 1f;
         public float m_MaxScreenCameraDistance = 100f;
+        public float m_TargetCameraDistance = 50f;
+        //public float m_MinTargetCameraDistance = 50f;
+        //public float m_MaxTargetCameraDistance = 100f;
         public float Pitch;
         public float Yaw;
         public float Roll;
@@ -43,6 +46,11 @@ namespace VE
         public float PaddingRight;
         public float PaddingUp;
         public float PaddingDown;
+        public float m_VoroneyeSwitchTime = 3f;
+        private bool m_DBSCANScreenMergingActive = false;
+        private double m_DBSCANScreenMergingDistance = 250;
+        private int m_DBSCANScreenMergingClusterCount = 0;
+        public int m_DBSCANScreenMergingMinTargets = 2;
         public bool m_SplitLinesActive = true;
         public Color m_SplitLinesColor = Color.black;
         public float m_SplitLinesWidth = 2;
@@ -61,10 +69,11 @@ namespace VE
         [SerializeField] private ForwardRendererData m_forwardRendererData = null;
         #endregion
 
-        
-
         //Screen
-        private bool m_VoroneyeActive = false;
+        private bool m_VoroneyeCurrentlyActive = false;
+        private bool m_VoroneyeSwitchingOn = false;
+        private bool m_VoroneyeSwitchingOff = false;
+        private float m_VoroneyeSwitchRatio = 0;
         ScreenProperties m_Screen;
 
         //Global/Screen Cameras 
@@ -97,6 +106,9 @@ namespace VE
         private int m_ActiveTargetCount;
         private int m_ScreenTargetCount;
 
+        //DBSCAN Targets
+        private List<Vector2> m_DBSCANScreenTargets;
+
         //Lines
         private List<LineRenderer> m_Lines;
         //private List<LineRenderer> m_PerpendicularLines;
@@ -111,7 +123,7 @@ namespace VE
 
         //Screens(Quads)
         private List<GameObject> m_Quads;
-        private float m_ScreenScaleMultiplicator = 1.5f; //Preventing some edge cases where the Voronoi Site would be bigger than the centered screen
+        private float m_ScreenScaleMultiplicator = 2f; //Preventing some edge cases where the Voronoi Site would be bigger than the centered screen
         private float m_ScreenSmoothTime = 0.19f;
 
         //Materials
@@ -119,6 +131,7 @@ namespace VE
 
         //Render Textures
         private List<RenderTexture> m_RenderTextures;
+        private int m_ScreenResolutionMultiplicator = 2;
 
         //Target Cameras
         private List<GameObject> m_TargetCameras;
@@ -140,6 +153,7 @@ namespace VE
             m_Lines = new List<LineRenderer>();
             //m_PerpendicularLines = new List<LineRenderer>();
             m_ScreenTargets = new List<Vector2>();
+            m_DBSCANScreenTargets = new List<Vector2>();
             m_Meshes = new List<GameObject>();
             m_Quads = new List<GameObject>();
             //m_Materials = new List<Material>();
@@ -175,7 +189,10 @@ namespace VE
 
             //Distance required to give a specified frustum height
             m_ScreenDistanceFromScreenCamera = m_Screen.Height * 0.5f / Mathf.Tan(m_ScreenCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            
+            #if UNITY_EDITOR
             new Layers().AddNewLayer(LAYERNAME2);
+            #endif
 
             //Setting Global Camera rendering order
             m_GlobalCamera.depth = 0;
@@ -202,14 +219,13 @@ namespace VE
             
             //Creation and setting of everything needed for each target (even if the GO is inactive) except if it is null
             for (int i = 0; i < m_TargetCount && m_Targets[i] != null; i++ )
-            {             
-                //Screen position
-                //m_ScreenTargets.Add(m_GlobalCamera.WorldToScreenPoint(m_Targets[i].transform.position));
-
+            {
+                #if UNITY_EDITOR
                 //Create new Layer for Stencil
                 new Layers().AddNewLayer(LAYERNAME + (i + 1));
-                //TODO: CHECK IF THERE'S CreateLayer() RETURNS TRUE AND IF NOT, BREAK
-                
+                //In Build mode the layers cannot be created from script, they have to be pre-setted!!!!
+                #endif
+
                 //Get the new layer as variable
                 LayerMask layer = LayerMask.NameToLayer(LAYERNAME + (i + 1)); //Gets the layer in the layermask (basically the index number)
                 
@@ -251,7 +267,7 @@ namespace VE
 
                 //Create Render Textures
                 RenderTexture rt;
-                rt = new RenderTexture(m_Screen.Width * 2, m_Screen.Height * 2, 16, RenderTextureFormat.ARGB32);
+                rt = new RenderTexture(m_Screen.Width * m_ScreenResolutionMultiplicator, m_Screen.Height * m_ScreenResolutionMultiplicator, 16, RenderTextureFormat.ARGB32);
                 rt.Create();
 
                 //Create Player Cameras
@@ -288,6 +304,7 @@ namespace VE
             
             //Last in the stack
             m_ScreenCamera.depth = cameracount;
+            m_ScreenCamera.enabled = false;
 
             //Go through all the player cameras to uncheck the voron-eye layers and the screencamera layer from their culling layermask
             for (int i = 0; i < m_TargetCameras.Count; i++)
@@ -313,11 +330,19 @@ namespace VE
             CheckTargets();
             CheckActiveTargets();
             CheckResolution(Screen.width, Screen.height);
-            //Recalculate Targets
-            //Recalculate onviewport changed
+
             CameraMovement();
 
             UpdateGlobalScreenTargets();
+
+            if (m_DBSCANScreenMergingActive)
+            {
+                ScreenTargetsDBSCAN();
+                CheckDBSCANTargets();
+                ReplaceGlobalScreenTargets();
+            }
+
+            TargetCameraMovement();
 
             if (m_ConnectingLinesActive)
             {
@@ -431,14 +456,14 @@ namespace VE
                 //Creation and setting of everything needed for each target
                 for (int i = 0; i < m_Targets.Count; i++)
                 {
+                    #if UNITY_EDITOR
                     //Create new Layer for Stencil
-                    new Layers().AddNewLayer(LAYERNAME + (i + 1));
-                    //TODO: CHECK IF THERE'S CreateLayer() RETURNS TRUE AND IF NOT, BREAK
-                    //Maybe not needed bc render target object has less Stencil IDs so I may limit with a max targets?
+                    new Layers().AddNewLayer(LAYERNAME + (i + 1));       
+                    #endif
 
                     //Get the new layer as variable
                     LayerMask layer = LayerMask.NameToLayer(LAYERNAME + (i + 1)); //Gets the layer in the layermask (basically the index number)
-
+                    
                     //Forward Renderer Settings
                     m_forwardRendererData.opaqueLayerMask &= ~(1 << layer); //This unchecks the specified layer (Search for: "Remove a Layer from a Layermask") with some bitshift shenanigans 
                     m_forwardRendererData.transparentLayerMask &= ~(1 << layer);
@@ -477,7 +502,7 @@ namespace VE
 
                     //Create Render Textures
                     RenderTexture rt;
-                    rt = new RenderTexture(Screen.width * 2, Screen.height * 2, 16, RenderTextureFormat.ARGB32);
+                    rt = new RenderTexture(Screen.width * m_ScreenResolutionMultiplicator, Screen.height * m_ScreenResolutionMultiplicator, 16, RenderTextureFormat.ARGB32);
                     rt.Create();
 
                     //Create Player Cameras
@@ -543,41 +568,27 @@ namespace VE
             m_ActiveTargets.Clear();
             //Check everywhere that targets inactive
             for (int i = 0; i < m_Targets.Count; i++)
-            {   
+            {
                 if (m_Targets[i] != null)
-                { 
+                {
                     if (m_Targets[i].gameObject.activeSelf)
                     {
                         m_ActiveTargets.Add(m_Targets[i]);
-
-                        if (!m_Meshes[m_Targets.Count-1].activeSelf)
-                        {
-                            m_Meshes[m_Targets.Count - 1].SetActive(true);
-                        }
-                        if (!m_Quads[m_Targets.Count - 1].activeSelf)
-                        {
-                            m_Quads[m_Targets.Count - 1].SetActive(true);
-                        }
-                        if (!m_TargetCameras[m_Targets.Count - 1].activeSelf)
-                        {
-                            m_TargetCameras[m_Targets.Count - 1].SetActive(true);
-                        }
+                        m_Meshes[i].SetActive(true);
+                        m_Quads[i].SetActive(true);
+                        m_TargetCameras[i].SetActive(true);
                     }
-                    else
-                    {
-                        m_Meshes[m_Targets.Count - 1].SetActive(false);
-                        m_Quads[m_Targets.Count - 1].SetActive(false);
-                        m_TargetCameras[m_Targets.Count - 1].SetActive(false);
-                    }
-                }
-                else
-                {
-                    m_Meshes[m_Targets.Count - 1].SetActive(false);
-                    m_Quads[m_Targets.Count - 1].SetActive(false);
-                    m_TargetCameras[m_Targets.Count - 1].SetActive(false);
-                }
+                }  
             }
-            
+
+            //Deactivate resting Targets Meshes, Screens and Cameras
+            for (int i = m_ActiveTargets.Count; i < m_Targets.Count; i++)
+            {
+                m_Meshes[i].SetActive(false);
+                m_Quads[i].SetActive(false);
+                m_TargetCameras[i].SetActive(false);
+            }
+
             if (m_ActiveTargetCount != m_ActiveTargets.Count)
             {
                 if (m_ConnectingLinesActive)
@@ -634,7 +645,7 @@ namespace VE
                 Destroy(m_RenderTextures[i]);
 
                 //Create Render Textures
-                m_RenderTextures[i] = new RenderTexture(m_Screen.Width * 2, m_Screen.Height * 2, 16, RenderTextureFormat.ARGB32);
+                m_RenderTextures[i] = new RenderTexture(m_Screen.Width * m_ScreenResolutionMultiplicator, m_Screen.Height * m_ScreenResolutionMultiplicator, 16, RenderTextureFormat.ARGB32);
                 m_RenderTextures[i].Create();
 
                 //Set Camera Render Target
@@ -693,29 +704,30 @@ namespace VE
         }
         private void UpdateGlobalScreenTargets()
         {
-            if (m_ScreenTargetCount != m_ActiveTargetCount)
-            {
-                SetScreenTargets();
-            }
-            else
-            {
-                for (int i = 0; i < m_ActiveTargets.Count; i++)
-                {
-                    m_ScreenTargets[i] = m_GlobalCamera.WorldToScreenPoint(m_ActiveTargets[i].transform.position);
-                }
+            SetScreenTargets();
+            //if (m_ScreenTargetCount != m_ActiveTargetCount)
+            //{
+            //    SetScreenTargets();
+            //}
+            //else
+            //{
+            //    for (int i = 0; i < m_ActiveTargets.Count; i++)
+            //    {
+            //        m_ScreenTargets[i] = m_GlobalCamera.WorldToScreenPoint(m_ActiveTargets[i].transform.position);
+            //    }
 
-                //Checking that the screen targets are not exactly at the same position (at least 1 away) beacuse it caused problems with voronoi diagram giving null values.
-                for (int i = 0; i < m_ScreenTargets.Count; i++)
-                {
-                    for (int j = i + 1; j < m_ScreenTargets.Count; j++)
-                    {
-                        if (m_ScreenTargets[i] == m_ScreenTargets[j])
-                        {
-                            m_ScreenTargets[j] = new Vector2(m_ScreenTargets[j].x + 1f, m_ScreenTargets[j].y + 1f);
-                        }
-                    }
-                }
-            }
+            //    //Checking that the screen targets are not exactly at the same position (at least 1 away) beacuse it caused problems with voronoi diagram giving null values.
+            //    for (int i = 0; i < m_ScreenTargets.Count; i++)
+            //    {
+            //        for (int j = i + 1; j < m_ScreenTargets.Count; j++)
+            //        {
+            //            if (m_ScreenTargets[i] == m_ScreenTargets[j])
+            //            {
+            //                m_ScreenTargets[j] = new Vector2(m_ScreenTargets[j].x + 1f, m_ScreenTargets[j].y + 1f);
+            //            }
+            //        }
+            //    }
+            //}
         }
         private void FindAverageTargetPosition()
         {
@@ -886,7 +898,7 @@ namespace VE
             }
             return false; // No collision      
         }
-        void CameraMovement()
+        private void CameraMovement()
         {
             if (m_ActiveTargets.Count == 0)
                 return;
@@ -923,37 +935,173 @@ namespace VE
             var distanceDiff = m_ScreenDistanceFromGlobalCamera + m_ScreenDistanceFromScreenCamera;
             m_ScreenCamera.transform.localPosition = new Vector3(0, 0, -distanceDiff);
 
-            //Checking that the screen camera distance from the targets is not higher than the maximum we set
+            //Checking that the screen camera distance from the targets is not higher than the maximum we set 
+            //And also handling Switching modes (state machine who?)
             if (m_GlobalCameraDistance > m_MaxScreenCameraDistance && m_SplitScreen)
             {
-                m_VoroneyeActive = true;
+                m_VoroneyeCurrentlyActive = true;
 
-                if (!m_ScreenCamera.enabled)
+                if (!m_VoroneyeSwitchingOn && !m_VoroneyeSwitchingOff)
                 {
-                    m_ScreenCamera.enabled = true;
-                    m_GlobalCamera.enabled = false;
+                    if (m_GlobalCamera.enabled && !m_ScreenCamera.enabled)
+                    {
+                        m_VoroneyeSwitchingOn = true;
+
+                        m_ScreenCamera.enabled = true;
+                        m_GlobalCamera.enabled = false;
+                    }
                 }
             }
-            else
+            else if (m_GlobalCameraDistance < m_MaxScreenCameraDistance && m_SplitScreen)
             {
-                m_VoroneyeActive = false;
-
-                if (!m_GlobalCamera.enabled | m_ScreenCamera.enabled)
+                if (m_VoroneyeCurrentlyActive)
                 {
-                    m_ScreenCamera.enabled = false;
-                    m_GlobalCamera.enabled = true;
+                    m_VoroneyeSwitchingOff = true;
+                    m_VoroneyeSwitchingOn = false;
+                }
+                else
+                {
+                    if (!m_VoroneyeSwitchingOn && !m_VoroneyeSwitchingOff)
+                    {
+                        if (!m_GlobalCamera.enabled | m_ScreenCamera.enabled)
+                        {
+                            m_ScreenCamera.enabled = false;
+                            m_GlobalCamera.enabled = true;
+                        }
+                    }
                 }
             }
 
-            //Player cameras
+            
+            
+            
+        }
+        private void ScreenTargetsDBSCAN()
+        {
+            //THE ORDER HAS TO BE PRESERVED
+
+            m_DBSCANScreenTargets.Clear();
+            //Vector2 avgpos = FindAveragePosition2D(m_ScreenTargets);
+
+            //Setting Screen Targets as Point
+            List<Point> points = new List<Point>();
+            for (int i = 0; i < m_ScreenTargets.Count; i++)
+            {
+                points.Add(new Point(m_ScreenTargets[i], i - 1));
+                //maxdist = Mathf.Max(maxdist, Vector2.Distance(m_ScreenTargets[i], avgpos)); 
+            }
+
+            DBSCAN dBSCAN = new DBSCAN();
+
+            //Settings
+            double eps = m_DBSCANScreenMergingDistance;
+            int minPts = m_DBSCANScreenMergingMinTargets;
+
+            //Calculate clusters
+            List<List<Point>> clusters = dBSCAN.GetClusters(points, eps, minPts);
+            List<List<Vector2>> clustersinvec = new List<List<Vector2>>();
+
+            //Set Cluster Count so we can see from editor (kinda debug)
+            m_DBSCANScreenMergingClusterCount = clusters.Count;
+
+            //Noise points (leftovers)
+            for (int i = 0; i < points.Count; i++)
+            {
+                if (points[i].ClusterId == Point.NOISE)
+                {
+                    m_DBSCANScreenTargets.Add(new Vector2(points[i].X, points[i].Y));
+                }
+            }
+
+            //Setting new Screen Targets
+            for (int i = 0; i < clusters.Count; i++)
+            {
+                int minIndex = points.Count; //To save the lowest index inside the cluster so we can maintain the original order in the list
+                clustersinvec.Add(new List<Vector2>());
+                for (int j = 0; j < clusters[i].Count; j++)
+                {
+                    clustersinvec[i].Add(new Vector2(clusters[i][j].X, clusters[i][j].Y));
+                    minIndex = Mathf.Min(minIndex, clusters[i][j].Index);
+                }
+
+                if (minIndex < m_DBSCANScreenTargets.Count - 1)
+                {
+                    m_DBSCANScreenTargets.Insert(minIndex, FindAveragePosition2D(clustersinvec[i]));
+                }
+                else
+                {
+                    m_DBSCANScreenTargets.Add(FindAveragePosition2D(clustersinvec[i]));
+                }
+            }
+        }
+        private void CheckDBSCANTargets()
+        {
+            if (m_DBSCANScreenTargets.Count < m_ActiveTargets.Count)
+            {
+                //Activate Target's Meshes, Screens and Cameras that are DBSCAN Targets
+                for (int i = 0;  i < m_DBSCANScreenTargets.Count; i++)
+                {
+                    m_Meshes[i].SetActive(true);
+                    m_Quads[i].SetActive(true);
+                    m_TargetCameras[i].SetActive(true);
+                }
+                //Deactivate Target's Meshes, Screens and Cameras that are not DBSCAN Targets
+                for (int i = m_DBSCANScreenTargets.Count; i < m_ActiveTargets.Count; i++)
+                {
+                    m_Meshes[i].SetActive(false);
+                    m_Quads[i].SetActive(false);
+                    m_TargetCameras[i].SetActive(false);
+                }
+            }
+        }
+        private void ReplaceGlobalScreenTargets()
+        {
+            m_ScreenTargets.Clear();
+            for (int i = 0; i < m_DBSCANScreenTargets.Count; i++)
+            {
+                m_ScreenTargets.Add(m_DBSCANScreenTargets[i]);
+            }
+        }
+        private void TargetCameraMovement()
+        {
             for (int i = 0; i < m_ActiveTargets.Count; i++)
             {
                 m_TargetCameras[i].transform.rotation = m_GlobalCamera.transform.rotation;
                 m_TargetCameras[i].transform.position = m_ActiveTargets[i].transform.position;
-                m_TargetCameras[i].transform.Translate(0, 0, -m_MaxScreenCameraDistance * m_ScreenScaleMultiplicator); //zoom scaled to the screen
+
+                if (m_VoroneyeCurrentlyActive)
+                {
+                    //Target cameras
+                    if (m_VoroneyeSwitchingOn)
+                    {
+                        //Lerping from global distance to target distance
+                        m_VoroneyeSwitchRatio += Time.deltaTime / m_VoroneyeSwitchTime;
+                        float t = m_VoroneyeSwitchRatio * m_VoroneyeSwitchRatio;
+
+                        m_TargetCameras[i].transform.Translate(0, 0, -Mathf.Lerp(m_GlobalCameraDistance, m_TargetCameraDistance, t) * m_ScreenScaleMultiplicator); //zoom scaled to the screen scale
+                    }
+                    else if (m_VoroneyeSwitchingOff)
+                    {
+                        //Lerping from target distance to global distance
+                        m_VoroneyeSwitchRatio += Time.deltaTime / m_VoroneyeSwitchTime;
+                        float t = m_VoroneyeSwitchRatio * m_VoroneyeSwitchRatio;
+
+                        m_TargetCameras[i].transform.Translate(0, 0, -Mathf.Lerp(m_TargetCameraDistance, m_GlobalCameraDistance, t) * m_ScreenScaleMultiplicator); //zoom scaled to the screen scale
+                    }
+                    else
+                    {
+                        //Target Distance
+                        m_TargetCameras[i].transform.Translate(0, 0, -m_TargetCameraDistance * m_ScreenScaleMultiplicator); //zoom scaled to the screen scale
+                    }
+                }
+                else
+                {
+                    //Global Distance
+                    m_TargetCameras[i].transform.Translate(0, 0, -m_GlobalCameraDistance * m_ScreenScaleMultiplicator); //zoom scaled to the screen scale
+                }
             }
         }
-        void VoronoiDiagram()
+        private void VoronoiDiagram()
         {
             //Special case for 1 target
             if (m_ScreenTargets.Count == 1)
@@ -1019,7 +1167,7 @@ namespace VE
                     y = mp.y + (pvec.y * linedist),
                 };
 
-                //Calculate point at a distance from the midpoint with the -pvec direction opposite to the previous
+                //Calculate point at a distance from the midpoint with the -pvec direction (opposite direction to the previous)
                 Vector2 mp_2 = new Vector2
                 {
                     x = mp.x + (-pvec.x * linedist),
@@ -1062,10 +1210,12 @@ namespace VE
                         m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(0, clipped);
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity = Vector3.zero;
-                        m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
-
+                        TargetScreensMovement(0, clipped, targetPos, velocity);
+                        //m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
+                        
                         //target 2 bottom 
                         clipped.Clear();
 
@@ -1079,9 +1229,11 @@ namespace VE
                         m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(1, clipped);
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity2 = Vector3.zero;
-                        m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
+                        TargetScreensMovement(1, clipped, targetPos2, velocity2);
+                        //m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
                     }
                     else
                     {
@@ -1098,10 +1250,12 @@ namespace VE
                         m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(1, clipped);
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity = Vector3.zero;
-                        m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
-
+                        TargetScreensMovement(1, clipped, targetPos, velocity);
+                        //m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
+                        
                         //target 1 bottom 
                         clipped.Clear();
 
@@ -1115,9 +1269,11 @@ namespace VE
                         m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(0, clipped);
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity2 = Vector3.zero;
-                        m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
+                        TargetScreensMovement(0, clipped, targetPos2, velocity2);
+                        //m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
                     }
                     //Update separating line
                     if (m_SplitLinesActive)
@@ -1137,7 +1293,7 @@ namespace VE
                     idc = Check(mp_1.x, mp_1.y, mp_2.x, mp_2.y, screenVertices2[1].x, screenVertices2[1].y, screenVertices2[3].x, screenVertices2[3].y, ref mp_4.x, ref mp_4.y);
 
                     //Checking which player is on the right
-                    if (Screen.width - m_ScreenTargets[0].y > Screen.width - m_ScreenTargets[1].y)
+                    if (Screen.width - m_ScreenTargets[0].x < Screen.width - m_ScreenTargets[1].x)
                     {
                         //target 1 is on the right
                         clipped.Clear();
@@ -1152,9 +1308,11 @@ namespace VE
                         m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(0, clipped);
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity = Vector3.zero;
-                        m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
+                        TargetScreensMovement(0, clipped, targetPos, velocity);
+                        //m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
 
                         //target 2 left
                         clipped.Clear();
@@ -1169,13 +1327,15 @@ namespace VE
                         m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(1, clipped);
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity2 = Vector3.zero;
-                        m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
+                        TargetScreensMovement(1, clipped, targetPos2, velocity2);
+                        //m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
                     }
                     else
                     {
-                        //target 2 is on top
+                        //target 2 is left
                         clipped.Clear();
 
                         clipped.Add(mp_3);
@@ -1188,11 +1348,13 @@ namespace VE
                         m_Meshes[1].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[1].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(1, clipped);
                         Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity = Vector3.zero;
-                        m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
+                        TargetScreensMovement(1, clipped, targetPos, velocity);
+                        //m_Quads[1].transform.localPosition = Vector3.SmoothDamp(m_Quads[1].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
 
-                        //target 1 bottom 
+                        //target 1 right
                         clipped.Clear();
 
                         clipped.Add(screenVertices2[0]);
@@ -1205,9 +1367,11 @@ namespace VE
                         m_Meshes[0].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[0].GetComponent<MeshFilter>().mesh, clipped);
 
                         //Move screen quads to the centroid of the resulting convex polygon
+                        //TargetScreensMovement(0, clipped);
                         Vector3 targetPos2 = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
                         Vector3 velocity2 = Vector3.zero;
-                        m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
+                        TargetScreensMovement(0, clipped, targetPos2, velocity2);
+                        //m_Quads[0].transform.localPosition = Vector3.SmoothDamp(m_Quads[0].transform.localPosition, targetPos2, ref velocity2, m_ScreenSmoothTime);
                     }
                     //Update separating line
                     UpdateSplitLine(m_SplitLines, 0, mp_3, mp_4, m_SplitLinesColor, m_SplitLinesWidth);
@@ -1250,10 +1414,7 @@ namespace VE
                         m_Meshes[i].GetComponent<MeshFilter>().mesh.Clear();
                         m_Meshes[i].GetComponent<MeshFilter>().mesh = MeshPolygonFromPolygon(m_Meshes[i].GetComponent<MeshFilter>().mesh, clipped);
 
-                        //Move screen quads to the centroid of the resulting convex polygon
-                        Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
-                        Vector3 velocity = Vector3.zero;
-                        m_Quads[i].transform.localPosition = Vector3.SmoothDamp(m_Quads[i].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
+                        TargetScreensMovement(i, clipped);
 
                         //Split Lines handling
                         if (m_SplitLinesActive)
@@ -1515,6 +1676,78 @@ namespace VE
                 }
             }
         }
+        private void TargetScreensMovement(int i, List<Vector2> clipped)
+        {
+            //Move screen quads to the centroid of the resulting convex polygon
+            Vector3 targetPos = new Vector3(FindAveragePosition2D(clipped).x, FindAveragePosition2D(clipped).y, 0f);
+            Vector3 lastpos = m_Quads[i].transform.localPosition;
+            if (m_VoroneyeSwitchingOn)
+            {
+                //Lerping from screentarget to centroid
+                m_VoroneyeSwitchRatio += Time.deltaTime / m_VoroneyeSwitchTime;
+                m_Quads[i].transform.localPosition = Vector3.Lerp(m_ScreenTargets[i], targetPos, m_VoroneyeSwitchRatio * m_VoroneyeSwitchRatio);
+
+                if (m_VoroneyeSwitchRatio >= 1)
+                {
+                    m_VoroneyeSwitchRatio = 0;
+                    m_VoroneyeSwitchingOn = false;
+                }
+            }
+            else if (m_VoroneyeSwitchingOff)
+            {
+                //Lerping from last to screen
+                m_VoroneyeSwitchRatio += Time.deltaTime / m_VoroneyeSwitchTime;
+                m_Quads[i].transform.localPosition = Vector3.Lerp(lastpos, m_ScreenTargets[i], m_VoroneyeSwitchRatio * m_VoroneyeSwitchRatio);
+
+                if (m_VoroneyeSwitchRatio >= 1f)
+                {
+                    m_VoroneyeSwitchRatio = 0;
+                    m_VoroneyeSwitchingOff = false;
+                    m_VoroneyeCurrentlyActive = false;
+                }
+            }
+            else
+            {
+                //Smoothing the movement
+                Vector3 velocity = Vector3.zero;
+                m_Quads[i].transform.localPosition = Vector3.SmoothDamp(m_Quads[i].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
+            }
+        }
+        private void TargetScreensMovement(int i, List<Vector2> clipped, Vector3 targetPos, Vector3 velocity)
+        {
+            //Move screen quads to the centroid of the resulting convex polygon
+            Vector3 lastpos = m_Quads[i].transform.localPosition;
+            if (m_VoroneyeSwitchingOn)
+            {
+                //Lerping from screentarget to centroid
+                m_VoroneyeSwitchRatio += Time.deltaTime / m_VoroneyeSwitchTime;
+                m_Quads[i].transform.localPosition = Vector3.Lerp(m_ScreenTargets[i], targetPos, m_VoroneyeSwitchRatio * m_VoroneyeSwitchRatio);
+
+                if (m_VoroneyeSwitchRatio >= 1)
+                {
+                    m_VoroneyeSwitchRatio = 0;
+                    m_VoroneyeSwitchingOn = false;
+                }
+            }
+            else if (m_VoroneyeSwitchingOff)
+            {
+                //Lerping from last to screen
+                m_VoroneyeSwitchRatio += Time.deltaTime / m_VoroneyeSwitchTime;
+                m_Quads[i].transform.localPosition = Vector3.Lerp(lastpos, m_ScreenTargets[i], m_VoroneyeSwitchRatio * m_VoroneyeSwitchRatio);
+
+                if (m_VoroneyeSwitchRatio >= 1f)
+                {
+                    m_VoroneyeSwitchRatio = 0;
+                    m_VoroneyeSwitchingOff = false;
+                    m_VoroneyeCurrentlyActive = false;
+                }
+            }
+            else
+            {
+                //Smoothing the movement
+                m_Quads[i].transform.localPosition = Vector3.SmoothDamp(m_Quads[i].transform.localPosition, targetPos, ref velocity, m_ScreenSmoothTime);
+            }
+        }
         static Mesh MeshPolygonFromPolygon(Mesh mesh, List<Vector2> polygon)
         {
             //Simplified version from Oskar's MeshFromPolygon() where he adds thickness (thus making it 3d)
@@ -1562,7 +1795,7 @@ namespace VE
 
             return mesh;
         }
-        PositionAndRotation TargetPositionAndRotation()
+        private PositionAndRotation TargetPositionAndRotation()
         {
             float halfVerticalFovRad = (m_GlobalCamera.fieldOfView * Mathf.Deg2Rad) / 2f;
             float halfHorizontalFovRad = Mathf.Atan(Mathf.Tan(halfVerticalFovRad) * m_GlobalCamera.aspect);
@@ -1602,7 +1835,6 @@ namespace VE
             float distanceBetweenEdgeProjectionHits = viewProjectionEdgeHits.Max - viewProjectionEdgeHits.Min;
             return (distanceBetweenEdgeProjectionHits / 2f) / Mathf.Tan(halfFovRad);
         }
-
         private ProjectionHits ViewProjectionEdgeHits(IEnumerable<Vector3> targetsRotatedToCameraIdentity, ProjectionEdgeHits alongAxis, float projectionPlaneZ, float halfFovRad)
         {
             float[] projectionHits = targetsRotatedToCameraIdentity
@@ -1610,7 +1842,6 @@ namespace VE
                 .ToArray();
             return new ProjectionHits(projectionHits.Max(), projectionHits.Min());
         }
-
         private float[] TargetProjectionHits(Vector3 target, ProjectionEdgeHits alongAxis, float projectionPlaneDistance, float halfFovRad)
         {
             float distanceFromProjectionPlane = projectionPlaneDistance - target.z;

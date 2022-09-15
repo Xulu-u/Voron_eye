@@ -1,8 +1,8 @@
 //https://forum.unity.com/threads/create-tags-and-layers-in-the-editor-using-script-both-edit-and-runtime-modes.732119/
 using UnityEditor;
 using UnityEngine;
-using System.Collections;
 
+#if UNITY_EDITOR
 namespace VE
 {
     public class Layers
@@ -48,7 +48,7 @@ namespace VE
                     {
                         // Assign string value to layer
                         sp.stringValue = layerName;
-                        Debug.Log("Layer: " + layerName + " has been added");
+                        Debug.Log("Layer: " + layerName + " has been added, REMEMBER TO MANUALLY SET THE LAYER IF YOU WANT TO DO A BUILD");
                         // Save settings
                         tagManager.ApplyModifiedProperties();
                         return true;
@@ -148,3 +148,4 @@ namespace VE
         }
     }
 }
+#endif
