@@ -50,7 +50,7 @@ namespace VE
         private bool m_DBSCANScreenMergingActive = false;
         private double m_DBSCANScreenMergingDistance = 250;
         private int m_DBSCANScreenMergingClusterCount = 0;
-        public int m_DBSCANScreenMergingMinTargets = 2;
+        private int m_DBSCANScreenMergingMinTargets = 2;
         public bool m_SplitLinesActive = true;
         public Color m_SplitLinesColor = Color.black;
         public float m_SplitLinesWidth = 2;
