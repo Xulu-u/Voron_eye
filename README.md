@@ -1,2 +1,2 @@
-# Voron-eye
+# Voron_eye
 A deep dive into camera framing with multiple points of focus and the exploration of the dynamic split-screen.
