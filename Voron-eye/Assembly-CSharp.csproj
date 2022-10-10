@@ -58,6 +58,7 @@
   <ItemGroup>
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\DelaunayTriangulation.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\MeshValue.cs" />
+    <Compile Include="Assets\Voron-eye\Scripts\Target.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\DBSCAN.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Movement.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\BreakableSurface.cs" />
@@ -70,6 +71,8 @@
     <Compile Include="Assets\Voron-eye\Scripts\Layers.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\VoronoiClipper.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\PositionAndRotation.cs" />
+    <Compile Include="Assets\Voron-eye\DemoGame\Character\Player.cs" />
+    <Compile Include="Assets\Voron-eye\DemoGame\Character\ThirdPersonCamera.cs" />
     <Compile Include="Assets\Voron-eye\Scripts\Oskar\VoronoiDiagram.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -1,5 +1,5 @@
 sceneSetups:
-- path: Assets/Voron-eye/Scenes/DemoScene.unity
+- path: Assets/Voron-eye/Scenes/GameDemoScene.unity
   isLoaded: 1
   isActive: 1
   isSubScene: 0

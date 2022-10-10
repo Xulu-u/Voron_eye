@@ -5,16 +5,16 @@ m_ProjectFiles:
     m_ContentTrackingEnabled: 1
     m_ModificationDate:
       serializedVersion: 2
-      ticks: 637986982307401248
-    m_Hash: 546480271
+      ticks: 638006088241012960
+    m_Hash: 4131942351
   m_LockFileStatus:
     m_FilePath: C:/Users/polhc/Documents/GitHub/Voron-eye/Voron-eye/Packages/packages-lock.json
     m_PathExists: 1
     m_ContentTrackingEnabled: 1
     m_ModificationDate:
       serializedVersion: 2
-      ticks: 637986982307411469
-    m_Hash: 3374004046
+      ticks: 638006088241339423
+    m_Hash: 2098860298
 m_EmbeddedPackageManifests:
   m_ManifestsStatus: {}
 m_PackageAssets:
@@ -1093,6 +1093,7 @@ m_PackageAssets:
         - 4.3.0
         - 4.4.0
         - 4.4.1
+        - 4.5.0
         compatible:
         - 0.0.3
         - 0.0.4
@@ -1145,6 +1146,7 @@ m_PackageAssets:
         - 4.3.0
         - 4.4.0
         - 4.4.1
+        - 4.5.0
         verified: 4.0.3
       dependencies:
       - name: com.unity.ugui
