@@ -8,6 +8,8 @@ public class Player : MonoBehaviour {
 
 	public GameObject Root;
 
+	public Camera Camera;
+
 	//Get the keycodes for all the various directions of movement.
 	public KeyCode Forward;
 	public KeyCode Backward;
